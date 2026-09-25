@@ -1002,121 +1002,74 @@ function Dashboard({
       )}
       <section className="demo-guide" aria-label="Ready-made demo options">
         <div>
-          <h2>Explore DeployGuard</h2>
+          <h2>Try DeployGuard</h2>
           <p className="muted">
-            Real deployment evidence, ready to review. No PR setup or Worker
-            upload needed.
+            Two live demos, ready to run. Both restore the original version when
+            finished.
           </p>
         </div>
         <div className="demo-options">
-          <button
-            className="demo-option"
-            disabled={!history.some((r) => r.phase === "promoted" && r.source)}
-            onClick={() =>
-              select(
-                history.find((r) => r.phase === "promoted" && r.source)!.id
-              )
-            }
-          >
-            <strong>
-              Review a successful deployment
-              <ArrowUpRightIcon size={16} />
-            </strong>
-            <span>
-              PR analysis, AI recommendations, healthy canary and promotion.
-            </span>
-          </button>
-          <button
-            className="demo-option"
-            disabled={
-              !history.some(
-                (r) => r.phase === "rolled_back" && r.rollbackVerification
-              )
-            }
-            onClick={() =>
-              select(
-                history.find(
-                  (r) => r.phase === "rolled_back" && r.rollbackVerification
-                )!.id
-              )
-            }
-          >
-            <strong>
-              Review a failed canary
-              <ArrowUpRightIcon size={16} />
-            </strong>
-            <span>
-              See the health failure, automatic rollback and verified recovery.
-            </span>
-          </button>
-          <button
-            className="demo-option"
-            disabled={
-              !fresh ||
-              locked ||
-              pending ||
-              !rehearsal ||
-              now < rehearsal.availableAt
-            }
-            onClick={() =>
-              setRehearsalConfirm(
-                rehearsalConfirm === "failure" ? false : "failure"
-              )
-            }
-            aria-expanded={rehearsalConfirm === "failure"}
-          >
-            <strong>
-              Run rollback rehearsal
-              <ArrowUpRightIcon size={16} />
-            </strong>
-            <span>
-              {locked
-                ? "A run is active. Review its progress below."
-                : rehearsal && now < rehearsal.availableAt
-                  ? `Ready again in ${Math.ceil((rehearsal.availableAt - now) / 1000)}s. Stored results remain available.`
-                  : "Launch the prepared failing version on the disposable target and watch it recover."}
-            </span>
-          </button>
-          <button
-            className="demo-option"
-            disabled={
-              !fresh ||
-              locked ||
-              pending ||
-              !rehearsal ||
-              now < rehearsal.availableAt
-            }
-            onClick={() =>
-              setRehearsalConfirm(
-                rehearsalConfirm === "healthy" ? false : "healthy"
-              )
-            }
-            aria-expanded={rehearsalConfirm === "healthy"}
-          >
-            <strong>
-              Run healthy rehearsal <ArrowUpRightIcon size={16} />
-            </strong>
-            <span>
-              Review PR #2, approve a temporary 100% promotion, then watch
-              stable restore automatically. Shares the five-minute cooldown.
-            </span>
-          </button>
+          {(
+            [
+              [
+                "healthy",
+                "Try a successful deployment",
+                "Review the AI analysis, approve the healthy update, then watch it restore automatically."
+              ],
+              [
+                "failure",
+                "See automatic rollback",
+                "Start a deliberately failing update. Watch DeployGuard detect errors and restore the working version."
+              ]
+            ] as const
+          ).map(([kind, title, description]) => (
+            <button
+              key={kind}
+              className="demo-option"
+              disabled={
+                !fresh ||
+                locked ||
+                pending ||
+                !rehearsal ||
+                now < rehearsal.availableAt
+              }
+              onClick={() =>
+                setRehearsalConfirm(rehearsalConfirm === kind ? false : kind)
+              }
+              aria-expanded={rehearsalConfirm === kind}
+            >
+              <strong>
+                {title}
+                <ArrowUpRightIcon size={16} />
+              </strong>
+              <span>{description}</span>
+            </button>
+          ))}
         </div>
+        <p className="demo-access-note">
+          {locked
+            ? "A demo is running. Follow it in Current run below."
+            : rehearsal && now < rehearsal.availableAt
+              ? `Next demo available in ${Math.ceil((rehearsal.availableAt - now) / 1000)}s. Explore completed runs in History while you wait.`
+              : !fresh
+                ? "Waiting for the latest deployment state…"
+                : "No setup or admin token needed. Open History to explore completed runs."}
+        </p>
         {rehearsalConfirm && (
           <div className="confirmation">
             <h3>
               {rehearsalConfirm === "healthy"
-                ? "Start a healthy promotion rehearsal?"
-                : "Start a real rollback rehearsal?"}
+                ? "Start the successful deployment demo?"
+                : "Start the automatic rollback demo?"}
             </h3>
             <p>
               {rehearsalConfirm === "healthy"
-                ? "PR #2 is analyzed before its healthy candidate receives 10% of traffic. When ready, approve the demo within 60 seconds. It will receive 100% temporarily, complete a 30-second health verification, then automatically restore the original stable version."
-                : "PR #3 is analyzed before the prepared candidate receives 10% of traffic. About 70% of its greeting requests intentionally return HTTP 503. The safety policy will evaluate the errors and restore stable; timing varies. No promotion approval is needed."}
+                ? "DeployGuard analyzes the prepared PR and tests the update with 10% of traffic. When asked, approve within 60 seconds. The update will briefly receive all traffic, then the original version is restored automatically."
+                : "DeployGuard analyzes the prepared PR and tests a faulty update with 10% of traffic. It detects the errors and restores the working version automatically. You do not need to approve anything."}
             </p>
             <p className="field-help">
               This is a real deployment, not a simulation. One run at a time;
-              five minutes between rehearsal starts.
+              five minutes between demo starts.
             </p>
             <div className="action-buttons">
               <button
@@ -1143,7 +1096,7 @@ function Dashboard({
                     setSelected(run.id);
                     setRehearsalConfirm(false);
                     setNotice(
-                      "Rehearsal started. The backend runs the safety checks and recovery automatically."
+                      "Demo started. Follow its progress below; it continues even if you close this page."
                     );
                   } catch (error) {
                     setNotice(
@@ -1155,7 +1108,7 @@ function Dashboard({
                   }
                 }}
               >
-                {pending ? "Starting…" : "Start prepared rehearsal"}
+                {pending ? "Starting…" : "Start demo"}
               </button>
               <button
                 className="button secondary"
@@ -1166,13 +1119,6 @@ function Dashboard({
               </button>
             </div>
           </div>
-        )}
-        {!admin && (
-          <p className="demo-access-note">
-            Reviewer access includes stored evidence, chat and the fixed
-            rehearsals, including temporary demo approval. Custom deployments
-            and manual recovery controls require admin sign-in.
-          </p>
         )}
       </section>
       {admin && newRun && (

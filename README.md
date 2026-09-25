@@ -27,12 +27,12 @@ The app opens in public reviewer mode. Use **Admin sign in** with `DEPLOYGUARD_A
 
 ## Reviewer demo
 
-No new PR, token or version upload is needed. The deployed dashboard provides four prepared choices:
+No new PR, token or version upload is needed. The deployed dashboard offers two choices:
 
-- **Review a successful deployment:** PR #1, immutable commit, AI advice, canary evidence and promotion.
-- **Review a failed canary:** health assertion failure, rollback and attributed stable recovery traffic.
-- **Run rollback rehearsal:** analyzes PR #3, then runs a real 90/10 canary whose greeting endpoint intentionally returns HTTP 503 about 70% of the time. The existing HTTP error policy triggers rollback and recovery verification.
-- **Run healthy rehearsal:** analyzes PR #2 and runs a healthy canary. Reviewers can approve a temporary real 100% promotion. After the short post-promotion verification, the backend automatically restores the original stable and verifies ordinary traffic before reporting **Demo complete · stable restored**. No browser timer is involved; closing the page does not stop recovery.
+- **Try a successful deployment:** analyzes PR #2 and runs a healthy canary. Reviewers approve a temporary real 100% promotion. After health verification, the backend restores the original stable and verifies recovery before reporting **Demo complete · stable restored**.
+- **See automatic rollback:** analyzes PR #3 and tests a candidate whose greeting endpoint intentionally returns HTTP 503 about 70% of the time. The HTTP error policy triggers rollback and recovery verification. No reviewer approval is needed.
+
+Completed runs, including the original PR #1 example, remain available in **History**. **Ask DeployGuard** opens by default and can be toggled closed. Both live demos continue if the browser closes.
 
 Both start commands accept no custom parameters and pin the PR head as well as the candidate. A moved PR head fails analysis conservatively. Its candidate and expected stable UUIDs are pinned in `src/deployment/rehearsal.ts`; a changed stable rejects validation before traffic changes. Both presets share the existing Durable Object lock, which prevents overlap; a persisted five-minute cooldown limits repeat starts. Public reviewers can approve only the prepared healthy demo, using a run-specific, expiring approval. They cannot approve ordinary deployments, manually roll back, reconcile, create arbitrary analyses or start arbitrary deployments. If recovery needs attention, an admin must investigate.
 
