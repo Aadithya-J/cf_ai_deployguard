@@ -359,7 +359,7 @@ function Health({
       {rollback && run.samples.length > 0 && (
         <details className="evidence">
           <summary>
-            Canary evidence before rollback ({run.samples.length})
+            Health evidence before restoration ({run.samples.length})
           </summary>
           <div className="table-scroll">
             <table>
