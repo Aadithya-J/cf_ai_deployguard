@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
-import { GitHubReader, boundedText } from "../analysis/github.ts";
+import { GitHubReader, boundedText, parsePullUrl } from "../analysis/github.ts";
 import {
   CHECK_CATALOG,
   MODEL,
@@ -10,7 +10,13 @@ import {
 } from "../analysis/advisory.ts";
 import { createAnalysis } from "../analysis/service.ts";
 import { CloudflareTarget } from "./cloudflare.ts";
-import { Lifecycle, POLICY, terminal, type Run } from "./lifecycle.ts";
+import {
+  Lifecycle,
+  POLICY,
+  terminal,
+  evaluate,
+  type Run
+} from "./lifecycle.ts";
 
 export type DeploymentEnv = Env & {
   DEPLOYGUARD_API_TOKEN?: string;
@@ -26,13 +32,124 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
     this.queue = next.catch(() => undefined);
     return next;
   }
+  private async saveRun(run: Run) {
+    await this.ctx.storage.put({ current: run, [`run:${run.id}`]: run });
+  }
+  private async reserveAnalysis(record: AnalysisRecord) {
+    const key = `association:${record.candidate}`;
+    const existing = await this.ctx.storage.get<AnalysisRecord>(key);
+    if (existing && !sameAssociation(existing, record))
+      throw new Error(
+        "Candidate already associated with a different immutable PR snapshot; upload a new version"
+      );
+    await this.ctx.storage.put({
+      [key]: existing ?? record,
+      [`analysis:${record.id}`]: record
+    });
+  }
+  private async analyzeRun(run: Run): Promise<NonNullable<Run["source"]>> {
+    let record: AnalysisRecord;
+    if (run.analysisId) {
+      const saved = await this.ctx.storage.get<AnalysisRecord>(
+        `analysis:${run.analysisId}`
+      );
+      if (!saved || saved.status !== "complete")
+        throw new Error("Interrupted analysis; start a fresh run");
+      record = saved;
+    } else {
+      const reader = new GitHubReader(this.env.GITHUB_TOKEN);
+      const target = new CloudflareTarget(this.env.DEPLOYGUARD_API_TOKEN!);
+      record = await createAnalysis(
+        { prUrl: run.request!.prUrl, candidate: run.candidate },
+        {
+          validateVersion: (id) => target.validateVersion(id),
+          snapshot: async (url) => {
+            const snapshot = await reader.snapshot(url);
+            if (
+              run.request?.expectedCommitSha &&
+              snapshot.commitSha !== run.request.expectedCommitSha
+            )
+              throw new Error("PR head differs from expected candidate commit");
+            return snapshot;
+          },
+          reserve: async (record) => {
+            await this.reserveAnalysis(record);
+            run.analysisId = record.id;
+            await this.saveRun(run);
+          },
+          save: (record) =>
+            this.ctx.storage.put(`analysis:${record.id}`, record),
+          infer: (input) => this.env.AI.run(MODEL, input)
+        }
+      );
+    }
+    if (record.status !== "complete" || record.candidate !== run.candidate)
+      throw new Error("PR analysis failed or mismatched candidate");
+    return {
+      analysisId: record.id,
+      commitSha: record.pr.commitSha,
+      prUrl: record.pr.url
+    };
+  }
+  private async readState(run: Run | undefined) {
+    if (!run)
+      return Response.json(null, { headers: { "cache-control": "no-store" } });
+    const analysis = run.analysisId
+      ? await this.ctx.storage.get<AnalysisRecord>(`analysis:${run.analysisId}`)
+      : undefined;
+    const counts: Record<string, Record<string, number>> = {};
+    for (const sample of run.samples) {
+      const key = `${sample.version}:${sample.endpoint}`;
+      const group = (counts[key] ??= {
+        pass: 0,
+        http_error: 0,
+        assertion_failure: 0,
+        unknown: 0
+      });
+      group[sample.outcome]++;
+    }
+    const healthy = evaluate(run, Date.now()) === "healthy";
+    return Response.json(
+      {
+        run,
+        analysis: analysis
+          ? recoverInterruptedAnalysis(analysis, Date.now())
+          : null,
+        health: {
+          decision: [
+            "canary",
+            "awaiting_approval",
+            "verifying_promotion"
+          ].includes(run.phase)
+            ? evaluate(run, Date.now())
+            : null,
+          counts
+        },
+        deadlines: {
+          canary: run.canaryAt ? run.canaryAt + run.policy.maxCanaryMs : null,
+          approval: run.approval?.expiresAt ?? null,
+          postPromotion: run.promotionAt
+            ? run.promotionAt + run.policy.postPromotionDeadlineMs
+            : null
+        },
+        allowedActions: {
+          approve:
+            run.phase === "awaiting_approval" &&
+            healthy &&
+            Date.now() < run.approval!.expiresAt,
+          rollback: !terminal(run) && Boolean(run.stable) && !run.intent,
+          reconcile: run.phase === "needs_attention"
+        }
+      },
+      { headers: { "cache-control": "no-store" } }
+    );
+  }
   private engine() {
     const target = new CloudflareTarget(this.env.DEPLOYGUARD_API_TOKEN!);
     return new Lifecycle({
       load: () => this.ctx.storage.get<Run>("current"),
-      save: async (run) => {
-        await this.ctx.storage.put({ current: run, [`run:${run.id}`]: run });
-      },
+      save: (run) => this.saveRun(run),
+      analyze: (run) => this.analyzeRun(run),
       current: () => target.current(),
       validateVersion: (id) => target.validateVersion(id),
       deploy: (versions, message) => target.deploy(versions, message),
@@ -88,19 +205,7 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
       const record = await createAnalysis(input, {
         snapshot: (url) => reader.snapshot(url),
         validateVersion: (id) => target.validateVersion(id),
-        reserve: (record) =>
-          this.serial(async () => {
-            const key = `association:${record.candidate}`;
-            const existing = await this.ctx.storage.get<AnalysisRecord>(key);
-            if (existing && !sameAssociation(existing, record))
-              throw new Error(
-                "Candidate already associated with a different immutable PR snapshot; upload a new version"
-              );
-            await this.ctx.storage.put({
-              [key]: existing ?? record,
-              [`analysis:${record.id}`]: record
-            });
-          }),
+        reserve: (record) => this.serial(() => this.reserveAnalysis(record)),
         save: (record) => this.ctx.storage.put(`analysis:${record.id}`, record),
         infer: (input) => this.env.AI.run(MODEL, input)
       });
@@ -130,19 +235,36 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
     // Slow GitHub/AI calls must never occupy the deployment/alarm serialization queue.
     if (new URL(request.url).pathname.startsWith("/api/analysis"))
       return this.analysisRequest(request);
-    return this.serial(async () => {
-      const path = new URL(request.url).pathname;
-      if (request.method === "GET" && path === "/api/deployment")
-        return Response.json((await this.ctx.storage.get("current")) ?? null);
-      if (request.method === "GET" && path === "/api/deployment/history") {
+    // Reads do not wait behind slow analysis or probe batches. Storage snapshots are durable.
+    const path = new URL(request.url).pathname;
+    if (request.method === "GET") {
+      if (path === "/api/deployment/state")
+        return this.readState(await this.ctx.storage.get<Run>("current"));
+      if (path === "/api/deployment")
+        return Response.json((await this.ctx.storage.get("current")) ?? null, {
+          headers: { "cache-control": "no-store" }
+        });
+      if (path === "/api/deployment/history") {
         const runs = await this.ctx.storage.list<Run>({
           prefix: "run:",
           limit: 100
         });
         return Response.json(
-          [...runs.values()].sort((a, b) => b.createdAt - a.createdAt)
+          [...runs.values()].sort((a, b) => b.createdAt - a.createdAt),
+          { headers: { "cache-control": "no-store" } }
         );
       }
+      const id = path.slice("/api/deployment/".length);
+      if (z.string().uuid().safeParse(id).success) {
+        const run = await this.ctx.storage.get<Run>(`run:${id}`);
+        return run
+          ? this.readState(run)
+          : Response.json({ error: "Run not found" }, { status: 404 });
+      }
+      return new Response("Not found", { status: 404 });
+    }
+    return this.serial(async () => {
+      const path = new URL(request.url).pathname;
       if (request.method !== "POST")
         return new Response("Not found", { status: 404 });
       try {
@@ -160,10 +282,20 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
           const input = z
             .object({
               candidate: z.string().uuid(),
-              analysisId: z.string().uuid().optional()
+              analysisId: z.string().uuid().optional(),
+              prUrl: z.string().max(500).optional(),
+              expectedCommitSha: z
+                .string()
+                .regex(/^[0-9a-f]{40}$/)
+                .optional()
             })
             .strict()
             .parse(body);
+          if (input.prUrl && input.analysisId)
+            throw new Error("Provide prUrl or existing analysisId, not both");
+          if (input.expectedCommitSha && !input.prUrl)
+            throw new Error("expectedCommitSha requires prUrl");
+          if (input.prUrl) parsePullUrl(input.prUrl);
           let source: Run["source"];
           if (input.analysisId) {
             const record = await this.ctx.storage.get<AnalysisRecord>(
@@ -183,7 +315,16 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
               prUrl: record.pr.url
             };
           }
-          run = await engine.start(input.candidate, source);
+          run = await engine.start(
+            input.candidate,
+            source,
+            input.prUrl
+              ? {
+                  prUrl: input.prUrl,
+                  expectedCommitSha: input.expectedCommitSha
+                }
+              : undefined
+          );
         } else if (path === "/api/deployment/approve") {
           const input = z
             .object({ runId: z.string().uuid(), approvalId: z.string().uuid() })

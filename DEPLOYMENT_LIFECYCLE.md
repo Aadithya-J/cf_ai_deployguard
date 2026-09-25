@@ -6,7 +6,10 @@ This is a deterministic controller for the single disposable `deployguard-demo-t
 
 ```mermaid
 stateDiagram-v2
-    [*] --> validating: accept run / acquire target lock
+    [*] --> analyzing: accept PR run / acquire target lock
+    analyzing --> validating: immutable advisory analysis persisted
+    analyzing --> rejected: PR or analysis unavailable
+    [*] --> validating: accept candidate-only run
     validating --> smoke: candidate exists; distinct stable at 100%
     validating --> rejected: invalid or unavailable
     smoke --> starting_canary: preview checks pass
@@ -91,12 +94,22 @@ Every endpoint requires `Authorization: Bearer <DEPLOYGUARD_ADMIN_TOKEN>`:
 | -------------------------------- | --------------------------------------------------------------------------------------- |
 | `GET /api/deployment`            | Current run, evidence, approval ID, transition history and confirmed deployment         |
 | `GET /api/deployment/history`    | Up to 100 persisted runs (key-limited, then sorted by creation time; no pagination yet) |
+| `GET /api/deployment/state`      | Current run plus linked analysis, health counts, deadlines and available actions        |
+| `GET /api/deployment/<run-id>`   | Same combined view for a historical run                                                 |
 | `POST /api/deployment/start`     | `{ "candidate": "<version-uuid>", "analysisId": "<optional-analysis-uuid>" }`           |
 | `POST /api/deployment/approve`   | `{ "runId": "<run-uuid>", "approvalId": "<approval-uuid>" }`                            |
 | `POST /api/deployment/rollback`  | `{ "runId": "<run-uuid>" }`                                                             |
 | `POST /api/deployment/reconcile` | `{ "runId": "<run-uuid>" }`                                                             |
 
 Accepted commands return 202. Inspect the current run for completion; acceptance is not a successful deployment. Invalid state/stale commands return 409. There is no endpoint to submit health evidence or modify safety thresholds.
+
+## Integrated PR run
+
+A single `POST /api/deployment/start` can accept `candidate`, `prUrl`, and optional `expectedCommitSha`. It persists the run and acquires the target lock before GitHub or AI work begins. An alarm performs analysis, records its ID and immutable source on the run, and moves into validation, smoke and canary processing. `prUrl` and an existing `analysisId` are mutually exclusive. An expected SHA mismatch rejects the run before traffic changes.
+
+The analysis checkpoint can reuse a completed record after interruption. An interrupted incomplete analysis rejects the run rather than blindly repeating inference. The linked analysis remains available for inspection. Reads bypass the mutation queue so the frontend can observe a persisted run while analysis is running. No model-generated field is read by promotion or rollback policy.
+
+The combined read view exposes persisted evidence, not a fresh Cloudflare API read; action availability is advisory and each command rechecks safety and ownership. Historical run records preserve their observed deployment IDs even after later runs change the target.
 
 ## Failure recovery and constraints to resolve
 

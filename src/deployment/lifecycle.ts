@@ -23,6 +23,7 @@ export const POLICY = Object.freeze({
 });
 export const ENDPOINTS = ["/health", "/api/greeting?name=DeployGuard"] as const;
 export type Phase =
+  | "analyzing"
   | "validating"
   | "smoke"
   | "starting_canary"
@@ -52,6 +53,8 @@ export interface Sample {
 export interface Run {
   id: string;
   source?: { analysisId: string; commitSha: string; prUrl: string };
+  request?: { prUrl: string; expectedCommitSha?: string };
+  analysisId?: string;
   candidate: string;
   stable: string;
   phase: Phase;
@@ -73,6 +76,7 @@ export interface Ports {
   save(run: Run): Promise<void>;
   current(): Promise<Deployment>;
   validateVersion(id: string): Promise<void>;
+  analyze?(run: Run): Promise<NonNullable<Run["source"]>>;
   deploy(versions: Allocation, message: string): Promise<void>;
   probe(run: Run, preview: boolean): Promise<Sample[]>;
   now(): number;
@@ -175,7 +179,11 @@ export class Lifecycle {
     r.events.push({ at: r.updatedAt, phase, reason });
     await this.p.save(r);
   }
-  async start(candidate: string, source?: Run["source"]) {
+  async start(
+    candidate: string,
+    source?: Run["source"],
+    request?: Run["request"]
+  ) {
     if (!uuid.test(candidate))
       throw new Error("Candidate must be a version UUID");
     const old = await this.p.load();
@@ -185,9 +193,10 @@ export class Lifecycle {
     const run: Run = {
       id: this.p.uuid(),
       candidate,
-      ...(source ? { source } : {}),
+      ...(source ? { source, analysisId: source.analysisId } : {}),
+      ...(request ? { request } : {}),
       stable: "",
-      phase: "validating",
+      phase: request ? "analyzing" : "validating",
       policy: { ...POLICY },
       createdAt: now,
       updatedAt: now,
@@ -195,7 +204,7 @@ export class Lifecycle {
       samples: [],
       events: []
     };
-    await this.move(run, "validating", "Run accepted");
+    await this.move(run, run.phase, "Run accepted; target lock acquired");
     return run;
   }
   private async checkCurrent(r: Run) {
@@ -347,7 +356,18 @@ export class Lifecycle {
       return r;
     }
     try {
-      if (["starting_canary", "promoting", "rolling_back"].includes(r.phase)) {
+      if (r.phase === "analyzing") {
+        if (!this.p.analyze) throw new Error("Analysis is not configured");
+        r.source = await this.p.analyze(r);
+        r.analysisId = r.source.analysisId;
+        await this.move(
+          r,
+          "validating",
+          "Immutable PR analysis persisted; candidate validation next"
+        );
+      } else if (
+        ["starting_canary", "promoting", "rolling_back"].includes(r.phase)
+      ) {
         // A delayed alarm must not promote on old evidence.
         if (
           r.phase === "promoting" &&
@@ -471,11 +491,15 @@ export class Lifecycle {
         }
       }
     } catch {
-      if (r.phase === "validating" || r.phase === "smoke")
+      if (
+        r.phase === "analyzing" ||
+        r.phase === "validating" ||
+        r.phase === "smoke"
+      )
         await this.move(
           r,
           "rejected",
-          "Validation unavailable; no traffic changed"
+          "PR analysis or validation unavailable; no traffic changed"
         );
       else if (
         r.intent &&

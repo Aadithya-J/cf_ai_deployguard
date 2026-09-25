@@ -393,3 +393,44 @@ test("old policy runs retain lock and permit only explicit stable restoration", 
   await f.engine.tick();
   assert.equal(f.run.phase, "rolled_back");
 });
+
+test("PR run is persisted and locked before analysis; immutable source survives into validation", async () => {
+  const f = fixture();
+  let analyzed = false;
+  f.ports.analyze = async (run) => {
+    assert.equal(f.run.phase, "analyzing");
+    assert.equal(f.run.id, run.id);
+    analyzed = true;
+    return {
+      analysisId: crypto.randomUUID(),
+      commitSha: "a".repeat(40),
+      prUrl: run.request!.prUrl
+    };
+  };
+  await f.engine.start(CANDIDATE, undefined, {
+    prUrl: "https://github.com/demo/repo/pull/1",
+    expectedCommitSha: "a".repeat(40)
+  });
+  assert.equal(analyzed, false);
+  assert.equal(f.run.phase, "analyzing");
+  await assert.rejects(f.engine.start(CANDIDATE), /active/);
+  await new Lifecycle(f.ports).tick();
+  assert.equal(f.run.phase, "validating");
+  assert.equal(f.run.source!.commitSha, "a".repeat(40));
+  assert.equal(f.run.analysisId, f.run.source!.analysisId);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "smoke");
+  assert.equal(f.writes.length, 0);
+});
+test("analysis failure rejects a persisted run without any target mutation", async () => {
+  const f = fixture();
+  f.ports.analyze = async () => {
+    throw new Error("GitHub unavailable");
+  };
+  await f.engine.start(CANDIDATE, undefined, {
+    prUrl: "https://github.com/demo/repo/pull/1"
+  });
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rejected");
+  assert.equal(f.writes.length, 0);
+});

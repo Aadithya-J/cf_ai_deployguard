@@ -51,7 +51,7 @@ Model output:
 
 `riskLevel` is `low`, `medium` or `high`. Allowed check IDs are `health_contract`, `greeting_contract`, `version_attribution`, `error_rate_comparison`, `latency_comparison`, and `invalid_input_contract`. Unknown/duplicate check IDs, extra fields and malformed output fail validation. Suggested checks do not change the controller's fixed checks or thresholds, and manual checks do not execute automatically.
 
-A deployment start may optionally include `analysisId` with `candidate`. The server verifies that the analysis is complete and matches that candidate, then records the analysis ID, commit SHA and PR URL on the run. The policy does not read the model's risk level, suggestions or prose. Analysis is not required to run the independently usable deterministic controller.
+A deployment start can include `prUrl` and an optional `expectedCommitSha` to create the durable run before performing analysis. Alternatively, it may include `analysisId` with `candidate`. The server verifies that the analysis is complete and matches that candidate, then records the analysis ID, commit SHA and PR URL on the run. The policy does not read the model's risk level, suggestions or prose. Analysis is not required to run the independently usable deterministic controller.
 
 ## Configuration and limits
 
