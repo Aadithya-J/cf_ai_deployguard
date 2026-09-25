@@ -12,8 +12,18 @@ export default {
     } else if (url.pathname === "/health") {
       result = { ok: true };
     } else if (url.pathname === "/api/greeting") {
-      const name = url.searchParams.get("name") || "DeployGuard";
-      if (name.length > 80) {
+      const names = url.searchParams.getAll("name");
+      const rawName = names[0] ?? "DeployGuard";
+      const name = rawName.trim();
+      if (names.length > 1) {
+        status = 400;
+        result = { error: "Provide only one name" };
+      } else if (!name || /\p{Cc}/u.test(rawName)) {
+        status = 400;
+        result = {
+          error: "Name must be non-blank and contain no control characters"
+        };
+      } else if (name.length > 80) {
         status = 400;
         result = { error: "Name must be at most 80 characters" };
       } else {
