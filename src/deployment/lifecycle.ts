@@ -1,6 +1,6 @@
 // This module has no Cloudflare runtime or LLM dependency. All decisions are deterministic.
 export const POLICY = Object.freeze({
-  version: 2,
+  version: 3,
   candidatePercent: 10,
   intervalMs: 5_000,
   minObservationMs: 30_000,
@@ -21,6 +21,13 @@ export const POLICY = Object.freeze({
   postPromotionDeadlineMs: 60_000,
   postPromotionSamples: 6
 });
+export const ROLLBACK_POLICY = Object.freeze({
+  windowMs: 30_000,
+  deadlineMs: 90_000,
+  minPerEndpoint: 7,
+  freshnessMs: 15_000,
+  maxLatencyMs: 2_000
+});
 export const ENDPOINTS = ["/health", "/api/greeting?name=DeployGuard"] as const;
 export type Phase =
   | "analyzing"
@@ -31,6 +38,7 @@ export type Phase =
   | "awaiting_approval"
   | "verifying_promotion"
   | "promoting"
+  | "verifying_rollback"
   | "rolling_back"
   | "promoted"
   | "rolled_back"
@@ -46,6 +54,7 @@ export interface Sample {
   id: string;
   at: number;
   version: string;
+  observedVersion?: string;
   endpoint: string;
   outcome: "pass" | "http_error" | "assertion_failure" | "unknown";
   latencyMs: number;
@@ -67,6 +76,11 @@ export interface Run {
   canaryAt?: number;
   promotionAt?: number;
   baseline?: Sample[];
+  rollbackVerification?: {
+    startedAt: number;
+    policy: typeof ROLLBACK_POLICY;
+    samples: Sample[];
+  };
   approval?: { id: string; expiresAt: number };
   samples: Sample[];
   intent?: { versions: Allocation; message: string; at: number };
@@ -96,6 +110,43 @@ const stableAllocation = (r: Run): Allocation => [
   { version_id: r.stable, percentage: 100 }
 ];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Require a continuous clean sampled interval for every endpoint, with no long
+// observation gaps. Failed/unknown/candidate samples reset the shared interval.
+export function rollbackHealthy(r: Run, now: number): boolean {
+  const v = r.rollbackVerification;
+  if (!v || now >= v.startedAt + v.policy.deadlineMs) return false;
+  const p = v.policy;
+  const samples = v.samples;
+  const valid = (s: Sample) =>
+    s.version === r.stable &&
+    s.observedVersion === r.stable &&
+    s.outcome === "pass" &&
+    Number.isFinite(s.latencyMs) &&
+    s.latencyMs >= 0 &&
+    s.latencyMs <= p.maxLatencyMs &&
+    s.at >= v.startedAt &&
+    s.at <= now;
+  const lastBad = samples.reduce(
+    (at, s) => (valid(s) ? at : Math.max(at, s.at)),
+    v.startedAt - 1
+  );
+  return ENDPOINTS.every((endpoint) => {
+    const group = samples
+      .filter((s) => s.endpoint === endpoint && s.at > lastBad && valid(s))
+      .sort((a, b) => a.at - b.at);
+    // A delayed alarm/restart must collect a new continuous interval.
+    let start = 0;
+    for (let i = 1; i < group.length; i++)
+      if (group[i].at - group[i - 1].at > p.freshnessMs) start = i;
+    const clean = group.slice(start);
+    return (
+      new Set(clean.map((s) => s.id)).size >= p.minPerEndpoint &&
+      clean.at(-1)!.at - clean[0].at >= p.windowMs &&
+      now - clean.at(-1)!.at <= p.freshnessMs
+    );
+  });
+}
 
 export function evaluate(
   r: Run,
@@ -224,6 +275,19 @@ export class Lifecycle {
     }
     return true;
   }
+  private async beginRollbackVerification(r: Run) {
+    delete r.approval;
+    r.rollbackVerification = {
+      startedAt: this.p.now(),
+      policy: { ...ROLLBACK_POLICY },
+      samples: []
+    };
+    await this.move(
+      r,
+      "verifying_rollback",
+      "Stable 100% confirmed; ordinary traffic verification required"
+    );
+  }
   private async confirm(r: Run) {
     const intent = r.intent!;
     const actual = await this.p.current();
@@ -249,8 +313,7 @@ export class Lifecycle {
           "verifying_promotion",
           "Candidate 100% confirmed; post-promotion probes required"
         );
-      } else
-        await this.move(r, "rolled_back", "Stable 100% confirmed by read-back");
+      } else await this.beginRollbackVerification(r);
     } else if (this.p.now() - intent.at >= r.policy.mutationConfirmationMs) {
       await this.move(
         r,
@@ -336,19 +399,31 @@ export class Lifecycle {
     const r = await this.p.load();
     if (!r || r.id !== runId || terminal(r))
       throw new Error("Run is not active");
+    if (r.phase === "verifying_rollback")
+      throw new Error("Rollback traffic verification already in progress");
     // An unresolved write could still complete: never race it with another mutation.
     if (r.intent)
       throw new Error("Reconcile pending mutation before requesting rollback");
     if (!r.stable || !(await this.checkCurrent(r)))
       throw new Error("Cannot safely own rollback");
     delete r.approval;
-    await this.move(r, "rolling_back", "Operator requested stable restoration");
+    if (sameAllocation(r.expected!.versions, stableAllocation(r)))
+      await this.beginRollbackVerification(r);
+    else
+      await this.move(
+        r,
+        "rolling_back",
+        "Operator requested stable restoration"
+      );
     return r;
   }
   async tick() {
     const r = await this.p.load();
     if (!r || terminal(r) || r.phase === "needs_attention") return r;
-    if (r.policy.version !== POLICY.version && r.phase !== "rolling_back") {
+    if (
+      r.policy.version !== POLICY.version &&
+      !["rolling_back", "verifying_rollback"].includes(r.phase)
+    ) {
       await this.move(
         r,
         "needs_attention",
@@ -425,6 +500,35 @@ export class Lifecycle {
         else {
           r.samples = [];
           await this.move(r, "starting_canary", "Preview smoke test passed");
+        }
+      } else if (r.phase === "verifying_rollback") {
+        if (!(await this.checkCurrent(r))) return r;
+        const verification = r.rollbackVerification!;
+        if (
+          this.p.now() <
+          verification.startedAt + verification.policy.deadlineMs
+        )
+          verification.samples.push(...(await this.p.probe(r, false)));
+        // Recheck ownership after probes as well as before reporting completion.
+        if (!(await this.checkCurrent(r))) return r;
+        if (
+          this.p.now() >=
+          verification.startedAt + verification.policy.deadlineMs
+        )
+          await this.move(
+            r,
+            "needs_attention",
+            "Rollback traffic did not converge before deadline; lock retained"
+          );
+        else if (rollbackHealthy(r, this.p.now()))
+          await this.move(
+            r,
+            "rolled_back",
+            "Stable allocation and healthy ordinary traffic verified"
+          );
+        else {
+          r.updatedAt = this.p.now();
+          await this.p.save(r);
         }
       } else if (r.phase === "verifying_promotion") {
         if (!(await this.checkCurrent(r))) return r;
@@ -529,7 +633,7 @@ export class Lifecycle {
     if (!r || r.id !== runId || r.phase !== "needs_attention")
       throw new Error("Run does not need reconciliation");
     const actual = await this.p.current();
-    // Only observed stable restoration can release an unresolved lock automatically.
+    // Stable allocation starts a new bounded traffic check; it cannot release the lock.
     if (
       r.stable &&
       sameAllocation(actual.versions, stableAllocation(r)) &&
@@ -539,11 +643,7 @@ export class Lifecycle {
       r.expected = actual;
       delete r.intent;
       delete r.approval;
-      await this.move(
-        r,
-        "rolled_back",
-        "Reconciliation observed stable at 100%"
-      );
+      await this.beginRollbackVerification(r);
     } else if (
       r.intent &&
       actual.annotations?.["workers/message"] === r.intent.message &&

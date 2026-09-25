@@ -15,6 +15,7 @@ import {
   POLICY,
   terminal,
   evaluate,
+  rollbackHealthy,
   type Run
 } from "./lifecycle.ts";
 
@@ -98,7 +99,7 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
       ? await this.ctx.storage.get<AnalysisRecord>(`analysis:${run.analysisId}`)
       : undefined;
     const counts: Record<string, Record<string, number>> = {};
-    for (const sample of run.samples) {
+    for (const sample of run.rollbackVerification?.samples ?? run.samples) {
       const key = `${sample.version}:${sample.endpoint}`;
       const group = (counts[key] ??= {
         pass: 0,
@@ -116,18 +117,25 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
           ? recoverInterruptedAnalysis(analysis, Date.now())
           : null,
         health: {
-          decision: [
-            "canary",
-            "awaiting_approval",
-            "verifying_promotion"
-          ].includes(run.phase)
-            ? evaluate(run, Date.now())
-            : null,
+          decision:
+            run.phase === "verifying_rollback"
+              ? rollbackHealthy(run, Date.now())
+                ? "healthy"
+                : "inconclusive"
+              : ["canary", "awaiting_approval", "verifying_promotion"].includes(
+                    run.phase
+                  )
+                ? evaluate(run, Date.now())
+                : null,
           counts
         },
         deadlines: {
           canary: run.canaryAt ? run.canaryAt + run.policy.maxCanaryMs : null,
           approval: run.approval?.expiresAt ?? null,
+          rollback: run.rollbackVerification
+            ? run.rollbackVerification.startedAt +
+              run.rollbackVerification.policy.deadlineMs
+            : null,
           postPromotion: run.promotionAt
             ? run.promotionAt + run.policy.postPromotionDeadlineMs
             : null
@@ -137,7 +145,11 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
             run.phase === "awaiting_approval" &&
             healthy &&
             Date.now() < run.approval!.expiresAt,
-          rollback: !terminal(run) && Boolean(run.stable) && !run.intent,
+          rollback:
+            !terminal(run) &&
+            run.phase !== "verifying_rollback" &&
+            Boolean(run.stable) &&
+            !run.intent,
           reconcile: run.phase === "needs_attention"
         }
       },

@@ -189,3 +189,32 @@ test("stored fetch preserves the global receiver required by Workers", async () 
     candidate
   );
 });
+
+test("rollback probes ordinary traffic expecting stable, retaining candidate attribution on mismatch", async () => {
+  const seen: Headers[] = [];
+  const target = new CloudflareTarget(
+    "test",
+    fakeFetch((url, init) => {
+      assert.ok(String(url).startsWith(`https://${TARGET.host}/`));
+      seen.push(new Headers(init?.headers));
+      return Response.json(
+        { ok: false },
+        { headers: { "x-deployguard-version": candidate } }
+      );
+    })
+  );
+  const samples = await target.probe(
+    { ...run, phase: "verifying_rollback" },
+    false
+  );
+  assert.equal(samples.length, 2);
+  assert.ok(seen.every((h) => !h.has("Cloudflare-Workers-Version-Overrides")));
+  assert.ok(
+    samples.every(
+      (s) =>
+        s.version === run.stable &&
+        s.observedVersion === candidate &&
+        s.outcome === "unknown"
+    )
+  );
+});

@@ -89,10 +89,15 @@ export class CloudflareTarget {
     );
   }
   async probe(run: Run, preview: boolean): Promise<Sample[]> {
+    const ordinary = ["verifying_promotion", "verifying_rollback"].includes(
+      run.phase
+    );
     const versions =
-      preview || run.phase === "verifying_promotion"
-        ? [run.candidate]
-        : [run.stable, run.candidate];
+      run.phase === "verifying_rollback"
+        ? [run.stable]
+        : preview || run.phase === "verifying_promotion"
+          ? [run.candidate]
+          : [run.stable, run.candidate];
     return Promise.all(
       versions.flatMap((version) =>
         ENDPOINTS.map(async (endpoint) => {
@@ -112,7 +117,7 @@ export class CloudflareTarget {
             const response = await this.http(`https://${host}${endpoint}`, {
               headers: {
                 "x-deployguard-probe": run.id,
-                ...(preview || run.phase === "verifying_promotion"
+                ...(preview || ordinary
                   ? {}
                   : {
                       "Cloudflare-Workers-Version-Overrides": `${TARGET.script}="${version}"`
@@ -121,6 +126,8 @@ export class CloudflareTarget {
               signal: AbortSignal.timeout(5_000),
               redirect: "manual"
             });
+            sample.observedVersion =
+              response.headers.get("x-deployguard-version") ?? undefined;
             // A platform error with no identifying header cannot be attributed reliably.
             if (response.headers.get("x-deployguard-version") !== version) {
               await response.body?.cancel();
