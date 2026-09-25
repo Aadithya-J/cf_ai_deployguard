@@ -361,6 +361,13 @@ function Chat() {
   } = useAgentChat({
     agent,
     experimental_throttle: 100,
+    onError: (error) => {
+      toasts.add({
+        title: "Could not get an AI response",
+        description: error.message,
+        timeout: 0
+      });
+    },
     onToolCall: async ({ toolCall, addToolOutput }) => {
       if (toolCall.toolName === "getUserTimezone") {
         addToolOutput({

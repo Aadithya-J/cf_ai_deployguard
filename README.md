@@ -6,7 +6,11 @@
 
 A starter template for building AI chat agents on Cloudflare, powered by the [Agents SDK](https://developers.cloudflare.com/agents/).
 
-Uses Workers AI (no API key required), with tools for weather, timezone detection, calculations with approval, task scheduling, and vision (image input).
+Uses Workers AI with Llama 3.3 (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`), with tools for weather, timezone detection, calculations with approval, and task scheduling. No third-party AI API key is required.
+
+Llama 3.3 supports text and tool calling, but not vision. The inherited image attachment UI requires switching to a vision-capable model before use.
+
+The current provider duplicates Llama 3.3 streaming text fragments. The starter uses the AI SDK's `simulateStreamingMiddleware` as a temporary workaround: each model response appears once it finishes generating, while chat persistence and tool calling keep working.
 
 ## Quick start
 

@@ -5,9 +5,11 @@ import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import {
   convertToModelMessages,
   pruneMessages,
+  simulateStreamingMiddleware,
   stepCountIs,
   streamText,
-  tool
+  tool,
+  wrapLanguageModel
 } from "ai";
 import { z } from "zod";
 
@@ -51,10 +53,15 @@ export class ChatAgent extends AIChatAgent<Env> {
     const workersai = createWorkersAI({ binding: this.env.AI });
 
     const result = streamText({
-      model: workersai("@cf/moonshotai/kimi-k2.7-code", {
-        sessionAffinity: this.sessionAffinity
+      model: wrapLanguageModel({
+        model: workersai("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
+          sessionAffinity: this.sessionAffinity
+        }),
+        // workers-ai-provider 3.3.1 duplicates Llama 3.3 streaming text deltas.
+        // Use complete responses through the existing chat/tool stream protocol.
+        middleware: simulateStreamingMiddleware()
       }),
-      system: `You are a helpful assistant that can understand images. You can check the weather, get the user's timezone, run calculations, and schedule tasks. When users share images, describe what you see and answer questions about them.
+      system: `You are a helpful text-based assistant. You can check the weather, get the user's timezone, run calculations, and schedule tasks. You cannot view images.
 
 ${getSchedulePrompt({ date: new Date() })}
 
@@ -183,7 +190,12 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
       abortSignal: options?.abortSignal
     });
 
-    return result.toUIMessageStreamResponse();
+    return result.toUIMessageStreamResponse({
+      onError: (error) => {
+        console.error("Workers AI response failed:", error);
+        return "The AI service could not respond. Please try again. If this continues, check your Cloudflare model access and usage limits.";
+      }
+    });
   }
 
   async executeTask(description: string, _task: Schedule<string>) {
