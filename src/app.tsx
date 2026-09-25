@@ -604,7 +604,56 @@ function RunDetail({
           ? "Persisted controller confirmation; not an independent live Cloudflare query."
           : "Allocation at this run’s last confirmation; it may have changed in later runs."}
       </p>
-      {admin && live && !terminal(run) && (
+      {run.rehearsal?.preset === "promotion-demo" && (
+        <section className="section" aria-label="Temporary demo promotion">
+          <h2>Temporary demo promotion</h2>
+          <p>
+            Approval sends real traffic to the candidate at 100%. After a short
+            health verification, the backend restores the original stable
+            version automatically, even if you close this page. The target stays
+            locked until recovery is verified.
+          </p>
+          {live && run.phase === "awaiting_approval" && (
+            <div className="action-buttons">
+              <button
+                className="button primary"
+                disabled={
+                  !fresh ||
+                  pending ||
+                  now >= (view.deadlines.approval ?? 0) ||
+                  now >= (view.deadlines.canary ?? 0)
+                }
+                onClick={async () => {
+                  if (confirm !== "approve-demo") {
+                    setConfirm("approve-demo");
+                    return;
+                  }
+                  await onAction("approve-demo", {
+                    runId: run.id,
+                    approvalId: run.rehearsal?.approvalId ?? run.approval?.id
+                  });
+                  setConfirm(null);
+                }}
+              >
+                {pending
+                  ? "Submitting…"
+                  : confirm === "approve-demo"
+                    ? "Confirm temporary promotion"
+                    : "Approve demo"}
+              </button>
+              {confirm === "approve-demo" && (
+                <button
+                  className="button secondary"
+                  onClick={() => setConfirm(null)}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+      {admin && live && !terminal(run) && confirm !== "approve-demo" && (
         <section className="actions-section" aria-label="Deployment controls">
           {!fresh && (
             <p className="error">
@@ -727,7 +776,9 @@ function Dashboard({
   onSignIn: () => void;
 }) {
   const [rehearsal, setRehearsal] = useState<RehearsalState | null>(null);
-  const [rehearsalConfirm, setRehearsalConfirm] = useState(false);
+  const [rehearsalConfirm, setRehearsalConfirm] = useState<
+    false | "failure" | "healthy"
+  >(false);
   const initialSelection = useRef(false);
   const [history, setHistory] = useState<Run[]>([]);
   const [current, setCurrent] = useState<RunView | null>(null);
@@ -834,14 +885,20 @@ function Dashboard({
   const fresh = !error && now - lastSync < 15_000;
   const locked = Boolean(current && !terminal(current.run));
   const action = async (action: string, body: object) => {
-    if (!admin) {
+    if (!admin && action !== "approve-demo") {
       setNotice("Admin sign-in is required for deployment controls.");
       return;
     }
     setPending(true);
     setNotice("");
     try {
-      await api(`/api/deployment/${action}`, body);
+      if (action === "approve-demo") await api("/api/reviewer-session", {});
+      await api(
+        action === "approve-demo"
+          ? "/api/demo/approve"
+          : `/api/deployment/${action}`,
+        body
+      );
       setNotice("Request accepted. Watch the run for the confirmed outcome.");
     } catch (error) {
       setNotice(
@@ -966,7 +1023,7 @@ function Dashboard({
               <ArrowUpRightIcon size={16} />
             </strong>
             <span>
-              PR #1, AI recommendations, healthy canary and full promotion.
+              PR analysis, AI recommendations, healthy canary and promotion.
             </span>
           </button>
           <button
@@ -1001,8 +1058,12 @@ function Dashboard({
               !rehearsal ||
               now < rehearsal.availableAt
             }
-            onClick={() => setRehearsalConfirm(!rehearsalConfirm)}
-            aria-expanded={rehearsalConfirm}
+            onClick={() =>
+              setRehearsalConfirm(
+                rehearsalConfirm === "failure" ? false : "failure"
+              )
+            }
+            aria-expanded={rehearsalConfirm === "failure"}
           >
             <strong>
               Run rollback rehearsal
@@ -1016,15 +1077,42 @@ function Dashboard({
                   : "Launch the prepared failing version on the disposable target and watch it recover."}
             </span>
           </button>
+          <button
+            className="demo-option"
+            disabled={
+              !fresh ||
+              locked ||
+              pending ||
+              !rehearsal ||
+              now < rehearsal.availableAt
+            }
+            onClick={() =>
+              setRehearsalConfirm(
+                rehearsalConfirm === "healthy" ? false : "healthy"
+              )
+            }
+            aria-expanded={rehearsalConfirm === "healthy"}
+          >
+            <strong>
+              Run healthy rehearsal <ArrowUpRightIcon size={16} />
+            </strong>
+            <span>
+              Review PR #2, approve a temporary 100% promotion, then watch
+              stable restore automatically. Shares the five-minute cooldown.
+            </span>
+          </button>
         </div>
         {rehearsalConfirm && (
           <div className="confirmation">
-            <h3>Start a real rollback rehearsal?</h3>
+            <h3>
+              {rehearsalConfirm === "healthy"
+                ? "Start a healthy promotion rehearsal?"
+                : "Start a real rollback rehearsal?"}
+            </h3>
             <p>
-              The prepared candidate will briefly receive 10% of traffic on the
-              disposable demo Worker. It intentionally fails its health check.
-              DeployGuard will restore the healthy version and verify recovery.
-              No approval is needed for this fixed rehearsal.
+              {rehearsalConfirm === "healthy"
+                ? "PR #2 is analyzed before its healthy candidate receives 10% of traffic. When ready, approve the demo within 60 seconds. It will receive 100% temporarily, complete a 30-second health verification, then automatically restore the original stable version."
+                : "PR #3 is analyzed before the prepared candidate receives 10% of traffic. About 70% of its greeting requests intentionally return HTTP 503. The safety policy will evaluate the errors and restore stable; timing varies. No promotion approval is needed."}
             </p>
             <p className="field-help">
               This is a real deployment, not a simulation. One run at a time;
@@ -1045,7 +1133,12 @@ function Dashboard({
                   setNotice("");
                   try {
                     await api("/api/reviewer-session", {});
-                    const run = await api<Run>("/api/demo/rehearsal", {});
+                    const run = await api<Run>(
+                      rehearsalConfirm === "healthy"
+                        ? "/api/demo/healthy"
+                        : "/api/demo/rehearsal",
+                      {}
+                    );
                     selection.current = run.id;
                     setSelected(run.id);
                     setRehearsalConfirm(false);
@@ -1077,8 +1170,8 @@ function Dashboard({
         {!admin && (
           <p className="demo-access-note">
             Reviewer access includes stored evidence, chat and the fixed
-            rehearsal. Custom deployments and manual controls require admin
-            sign-in.
+            rehearsals, including temporary demo approval. Custom deployments
+            and manual recovery controls require admin sign-in.
           </p>
         )}
       </section>

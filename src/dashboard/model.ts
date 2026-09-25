@@ -27,12 +27,13 @@ export const phases: Record<Run["phase"], string> = {
   rolling_back: "Rolling back",
   verifying_rollback: "Verifying recovery",
   promoted: "Promoted",
+  demo_complete: "Demo complete · stable restored",
   rolled_back: "Rolled back",
   rejected: "Rejected",
   needs_attention: "Needs attention"
 };
 export const terminal = (run: Run) =>
-  ["promoted", "rolled_back", "rejected"].includes(run.phase);
+  ["promoted", "rolled_back", "rejected", "demo_complete"].includes(run.phase);
 export const short = (id?: string) => (id ? id.slice(0, 8) : "Not established");
 export const date = (at: number) =>
   new Date(at).toLocaleString(undefined, {
