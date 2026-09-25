@@ -146,3 +146,6 @@ dist
 .dev.vars*
 !.dev.vars.example
 !.env.example
+
+# Generated independently from the demo target's Wrangler configuration.
+/demo-worker/worker-configuration.d.ts

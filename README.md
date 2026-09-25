@@ -237,6 +237,10 @@ npm run deploy
 
 Your agent is live on Cloudflare's global network. Messages persist in SQLite, streams resume on disconnect, and the agent hibernates when idle.
 
+## Disposable deployment target
+
+The separate [demo Worker](demo-worker/README.md) provides version-attributed health and application endpoints for DeployGuard testing. Its [verification report](demo-worker/VERIFICATION.md) records the real gradual deployment, stable restoration and Free-plan telemetry findings. Run `npm run demo:check` to validate it.
+
 ## Learn more
 
 - [Agents SDK documentation](https://developers.cloudflare.com/agents/)
