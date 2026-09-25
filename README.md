@@ -4,6 +4,12 @@ An AI-assisted progressive deployment dashboard for one Cloudflare account and t
 
 The dashboard is the primary interface. It shows persisted deployment history, immutable PR analysis, live synthetic health evidence, approval and recovery controls, and final outcomes. **Ask DeployGuard** is a secondary, read-only chat interface for questions about stored runs.
 
+## Try the deployed app
+
+Open [DeployGuard](https://deployguard.jlaadithya.workers.dev). No admin token is needed: try either reviewer demo, inspect its PR analysis and health evidence, and ask the chat about stored runs. The healthy demo asks for approval before temporarily promoting and restoring stable; the failure demo rolls back automatically.
+
+Assignment components: Workers AI Llama 3.3, Workers/Durable Object coordination, chat input, and persistent deployment/analysis/chat state. Development prompts are in [PROMPTS.md](PROMPTS.md).
+
 ## Run locally
 
 ```sh
@@ -72,3 +78,7 @@ DeployGuard secrets must be installed separately with Wrangler; never commit `.d
 Limits: synthetic probes from one coordinator do not prove global production health; PR association does not prove build provenance; history is capped at 100 unpaginated records; deployment API read/write races with external writers remain possible. Use the controller as the sole deployment writer during an active run.
 
 The failure fixture deliberately behaves differently on preview and ordinary hostnames, so smoke passes and the demo exercises canary error thresholds. Randomness changes failure timing, not the safety rules. If a reviewer does not approve a healthy demo within the existing 60-second approval window, it restores stable without claiming a successful promotion. Reset failures remain `needs_attention` and block subsequent runs. Both presets expect stable `eb3a0ea3-b238-40c0-833e-62dc61c7f35e`; an ordinary admin promotion to a different stable requires explicitly updating the presets before further rehearsals.
+
+## Repository rename and historical records
+
+The GitHub repository is now `Aadithya-J/cf_ai_deployguard` (repository ID `1386919200`). The Worker name and storage bindings remain unchanged. Old PR inputs resolve explicitly to the renamed repository; GitHub responses must match its verified ID. Historical records retain their original captured metadata. Candidate associations accept the old and new names only for this rename and still require the same candidate, PR number, head SHA, merge-base SHA, and diff hash. Advancing `main` alone does not invalidate an unchanged PR diff.

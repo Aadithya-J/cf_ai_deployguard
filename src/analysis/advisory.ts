@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { PullSnapshot } from "./github.ts";
+import { canonicalRepository, type PullSnapshot } from "./github.ts";
 
 export const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 export const CHECK_CATALOG = {
@@ -95,10 +95,13 @@ export interface AnalysisRecord {
 export function sameAssociation(a: AnalysisRecord, b: AnalysisRecord) {
   return (
     a.candidate === b.candidate &&
-    a.pr.repository.toLowerCase() === b.pr.repository.toLowerCase() &&
+    canonicalRepository(a.pr.repository).toLowerCase() ===
+      canonicalRepository(b.pr.repository).toLowerCase() &&
     a.pr.number === b.pr.number &&
     a.pr.commitSha === b.pr.commitSha &&
-    a.pr.baseSha === b.pr.baseSha &&
+    // The target branch may advance without changing this candidate's diff.
+    // Its merge base, head and diff hash must all remain identical.
+    a.pr.mergeBaseSha === b.pr.mergeBaseSha &&
     a.pr.diffSha256 === b.pr.diffSha256
   );
 }

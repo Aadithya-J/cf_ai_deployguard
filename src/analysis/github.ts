@@ -1,5 +1,17 @@
 import { z } from "zod";
 
+// Verified GitHub repository ID survives the submission rename. Resolve the old
+// name explicitly rather than following redirects (which could later be reused).
+export const PROJECT_REPOSITORY = "Aadithya-J/cf_ai_deployguard";
+const PROJECT_REPOSITORY_ID = 1386919200;
+export function canonicalRepository(value: string): string {
+  return ["aadithya-j/deployguard", PROJECT_REPOSITORY.toLowerCase()].includes(
+    value.toLowerCase()
+  )
+    ? PROJECT_REPOSITORY
+    : value;
+}
+
 const sha = z.string().regex(/^[0-9a-f]{40}$/);
 const prSchema = z.object({
   number: z.number().int(),
@@ -8,7 +20,10 @@ const prSchema = z.object({
   state: z.enum(["open", "closed"]),
   draft: z.boolean(),
   merged: z.boolean(),
-  base: z.object({ sha, repo: z.object({ full_name: z.string() }) }),
+  base: z.object({
+    sha,
+    repo: z.object({ full_name: z.string(), id: z.number().optional() })
+  }),
   head: z.object({ sha }),
   changed_files: z.number().int().nonnegative()
 });
@@ -43,7 +58,7 @@ export function parsePullUrl(value: string) {
     Number(match[3]) > 2_147_483_647
   )
     throw new Error("Expected https://github.com/owner/repository/pull/number");
-  const repository = `${match[1]}/${match[2]}`;
+  const repository = canonicalRepository(`${match[1]}/${match[2]}`);
   return {
     repository,
     number: Number(match[3]),
@@ -113,6 +128,8 @@ export class GitHubReader {
     const read = async () => {
       const pr = prSchema.parse(JSON.parse(await this.get(path)));
       if (
+        (parsed.repository === PROJECT_REPOSITORY &&
+          pr.base.repo.id !== PROJECT_REPOSITORY_ID) ||
         pr.number !== parsed.number ||
         pr.base.repo.full_name.toLowerCase() !==
           parsed.repository.toLowerCase() ||

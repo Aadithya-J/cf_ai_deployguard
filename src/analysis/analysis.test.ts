@@ -261,3 +261,74 @@ test("GitHub reader binds the native fetch receiver in Workers", async () => {
   );
   assert.equal(checked, true);
 });
+
+test("repository rename resolves legacy PR inputs and verifies GitHub repository ID", async () => {
+  const canonical = "Aadithya-J/cf_ai_deployguard";
+  assert.equal(
+    parsePullUrl("https://github.com/Aadithya-J/deployguard/pull/2").url,
+    `https://github.com/${canonical}/pull/2`
+  );
+  for (const repositoryId of [1386919200, 123]) {
+    const requests: string[] = [];
+    const http = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.includes("/pulls/"))
+        return Response.json({
+          ...pr,
+          html_url: `https://github.com/${canonical}/pull/12`,
+          base: { sha: base, repo: { full_name: canonical, id: repositoryId } }
+        });
+      if (
+        new Headers(init?.headers).get("Accept") ===
+        "application/vnd.github.diff"
+      )
+        return new Response(diff);
+      return Response.json({ merge_base_commit: { sha: merge } });
+    }) as typeof fetch;
+    const result = new GitHubReader(undefined, http).snapshot(
+      "https://github.com/Aadithya-J/deployguard/pull/12"
+    );
+    if (repositoryId === 1386919200)
+      assert.equal((await result).repository, canonical);
+    else await assert.rejects(result, /identity mismatch/);
+    assert.ok(requests.every((url) => url.includes(`/repos/${canonical}/`)));
+  }
+});
+
+test("saved associations survive the verified rename and base advance but reject changed evidence", async () => {
+  const record = await createAnalysis(
+    { prUrl: pr.html_url, candidate },
+    serviceFixture().ports
+  );
+  const old = {
+    ...record,
+    pr: { ...record.pr, repository: "Aadithya-J/deployguard" }
+  };
+  const renamed = {
+    ...old,
+    pr: {
+      ...old.pr,
+      repository: "Aadithya-J/cf_ai_deployguard",
+      baseSha: "f".repeat(40)
+    }
+  };
+  const original = structuredClone(old);
+  assert.equal(sameAssociation(old, renamed), true);
+  assert.deepEqual(old, original);
+  for (const changed of [
+    { repository: "another-owner/cf_ai_deployguard" },
+    { number: 99 },
+    { commitSha: "e".repeat(40) },
+    { mergeBaseSha: "e".repeat(40) },
+    { diffSha256: "e".repeat(64) }
+  ])
+    assert.equal(
+      sameAssociation(old, { ...renamed, pr: { ...renamed.pr, ...changed } }),
+      false
+    );
+  assert.equal(
+    sameAssociation(old, { ...renamed, candidate: crypto.randomUUID() }),
+    false
+  );
+});

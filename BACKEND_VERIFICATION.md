@@ -6,7 +6,7 @@ The real `deployguard` Worker and its singleton SQLite Durable Object performed 
 
 - Backend: https://deployguard.jlaadithya.workers.dev
 - Target: `deployguard-demo-target` in the existing single account.
-- PR: https://github.com/Aadithya-J/deployguard/pull/1
+- PR: https://github.com/Aadithya-J/cf_ai_deployguard/pull/1
 - Captured commit: `6da8ddb71532d280df82f33fc38ba211b38431f4`
 - Candidate: `eb3a0ea3-b238-40c0-833e-62dc61c7f35e`
 - Original stable: `3ee6a076-7813-41ce-ad03-0e6ed384b31e`

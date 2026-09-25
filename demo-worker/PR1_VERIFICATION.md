@@ -4,7 +4,7 @@ Verified on 2026-09-25 against Cloudflare-hosted endpoints.
 
 ## Immutable source and uploaded version
 
-- PR: [fix(demo): validate personalized greeting names](https://github.com/Aadithya-J/deployguard/pull/1)
+- PR: [fix(demo): validate personalized greeting names](https://github.com/Aadithya-J/cf_ai_deployguard/pull/1)
 - Head commit: `6da8ddb71532d280df82f33fc38ba211b38431f4`
 - Base/merge-base commit: `c067fb9044344fe8d863dd4e56eb4226966e1c03`
 - Diff SHA-256: `016058a45f2f51b78046fe55cf26460e52bb38159b11810288a0688c84f9079e`
