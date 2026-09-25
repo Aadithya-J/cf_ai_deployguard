@@ -241,6 +241,8 @@ Your agent is live on Cloudflare's global network. Messages persist in SQLite, s
 
 The separate [demo Worker](demo-worker/README.md) provides version-attributed health and application endpoints for DeployGuard testing. Its [verification report](demo-worker/VERIFICATION.md) records the real gradual deployment, stable restoration and Free-plan telemetry findings. Run `npm run demo:check` to validate it.
 
+The [V1 deployment lifecycle](DEPLOYMENT_LIFECYCLE.md) documents the deterministic safety policy, approval API, recovery behavior and tests. Run `npm test` for the focused lifecycle tests. Deployment control requires separate API and admin secrets and operates only on the disposable target.
+
 ## Learn more
 
 - [Agents SDK documentation](https://developers.cloudflare.com/agents/)

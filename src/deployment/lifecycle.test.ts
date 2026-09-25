@@ -1,0 +1,382 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  Lifecycle,
+  POLICY,
+  ENDPOINTS,
+  evaluate,
+  type Run,
+  type Deployment,
+  type Ports,
+  type Sample,
+  type Allocation
+} from "./lifecycle.ts";
+
+const STABLE = "11111111-1111-4111-8111-111111111111";
+const CANDIDATE = "22222222-2222-4222-8222-222222222222";
+function fixture() {
+  let now = 1_000_000;
+  let saved: Run | undefined;
+  let actual: Deployment = {
+    id: "initial",
+    versions: [{ version_id: STABLE, percentage: 100 }]
+  };
+  let outcome: Sample["outcome"] = "pass";
+  let mutation: "normal" | "lost-response" | "not-applied" = "normal";
+  let readsFail = false;
+  let candidateInvalid = false;
+  const writes: Allocation[] = [];
+  const ports: Ports = {
+    now: () => now,
+    uuid: () => crypto.randomUUID(),
+    load: async () => (saved ? structuredClone(saved) : undefined),
+    save: async (r) => {
+      saved = structuredClone(r);
+    },
+    current: async () => {
+      if (readsFail) throw new Error("API unavailable");
+      return structuredClone(actual);
+    },
+    validateVersion: async () => {
+      if (candidateInvalid) throw new Error("404");
+    },
+    deploy: async (versions, message) => {
+      writes.push(versions);
+      if (mutation !== "not-applied")
+        actual = {
+          id: crypto.randomUUID(),
+          versions,
+          annotations: { "workers/message": message }
+        };
+      if (mutation !== "normal") throw new Error("Timed out");
+    },
+    probe: async (r, preview) =>
+      (preview || r.phase === "verifying_promotion"
+        ? [r.candidate]
+        : [r.stable, r.candidate]
+      ).flatMap((version) =>
+        ENDPOINTS.map((endpoint) => ({
+          id: crypto.randomUUID(),
+          at: now,
+          version,
+          endpoint,
+          outcome,
+          latencyMs: 100
+        }))
+      )
+  };
+  const engine = new Lifecycle(ports);
+  return {
+    engine,
+    ports,
+    writes,
+    get run() {
+      return structuredClone(saved!);
+    },
+    advance: (ms: number = POLICY.intervalMs) => {
+      now += ms;
+    },
+    setOutcome: (value: typeof outcome) => {
+      outcome = value;
+    },
+    setMutation: (value: typeof mutation) => {
+      mutation = value;
+    },
+    setReadsFail: (value: boolean) => {
+      readsFail = value;
+    },
+    invalidateCandidate: () => {
+      candidateInvalid = true;
+    },
+    drift: () => {
+      actual = { ...actual, id: "external-deployment" };
+    },
+    restoreExternally: () => {
+      actual = {
+        id: "manual-stable",
+        versions: [{ version_id: STABLE, percentage: 100 }]
+      };
+    },
+    now: () => now
+  };
+}
+async function canary(f: ReturnType<typeof fixture>) {
+  await f.engine.start(CANDIDATE);
+  await f.engine.tick(); // validate
+  await f.engine.tick(); // smoke
+  await f.engine.tick(); // create and confirm canary
+  assert.equal(f.run.phase, "canary");
+}
+async function healthy(f: ReturnType<typeof fixture>) {
+  await canary(f);
+  for (let i = 0; i < POLICY.minPerEndpoint; i++) {
+    f.advance();
+    await f.engine.tick();
+  }
+  assert.equal(f.run.phase, "awaiting_approval");
+}
+
+test("healthy canary waits for explicit approval, then confirms candidate 100%", async () => {
+  const f = fixture();
+  await healthy(f);
+  assert.equal(f.writes.length, 1);
+  const r = f.run;
+  await f.engine.approve(r.id, r.approval!.id);
+  assert.equal(f.run.phase, "promoting");
+  await f.engine.tick();
+  assert.equal(f.run.phase, "verifying_promotion");
+  for (let i = 0; i < POLICY.postPromotionSamples; i++) {
+    f.advance();
+    await f.engine.tick();
+  }
+  assert.equal(f.run.phase, "promoted");
+  assert.deepEqual(f.writes[1], [{ version_id: CANDIDATE, percentage: 100 }]);
+  assert.equal(f.run.expected!.versions[0].version_id, CANDIDATE);
+  await f.engine.tick();
+  assert.equal(f.writes.length, 2);
+});
+test("unhealthy canary rolls back and only completes after stable read-back", async () => {
+  const f = fixture();
+  await canary(f);
+  f.setOutcome("assertion_failure");
+  f.advance();
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rolling_back");
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rolled_back");
+  assert.deepEqual(f.writes.at(-1), [{ version_id: STABLE, percentage: 100 }]);
+});
+test("inconclusive evidence cannot promote; fixed deadline restores stable", async () => {
+  const f = fixture();
+  await canary(f);
+  f.setOutcome("unknown");
+  for (let i = 0; i < 12; i++) {
+    f.advance();
+    await f.engine.tick();
+  }
+  assert.equal(f.run.phase, "canary");
+  assert.equal(f.run.approval, undefined);
+  f.advance(POLICY.maxCanaryMs);
+  await f.engine.tick();
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rolled_back");
+});
+test("stale approval: wrong run, wrong token, expired evidence and replay are rejected", async () => {
+  const f = fixture();
+  await healthy(f);
+  const r = f.run;
+  await assert.rejects(f.engine.approve("other", r.approval!.id), /Stale/);
+  await assert.rejects(f.engine.approve(r.id, "other"), /Stale/);
+  f.advance(POLICY.freshnessMs + 1);
+  await assert.rejects(f.engine.approve(r.id, r.approval!.id), /fresh/);
+  f.advance(POLICY.approvalMs);
+  await f.engine.tick();
+  await f.engine.tick();
+  await assert.rejects(f.engine.approve(r.id, r.approval!.id), /Stale/);
+  assert.equal(f.run.phase, "rolled_back");
+});
+test("health loss invalidates an issued approval", async () => {
+  const f = fixture();
+  await healthy(f);
+  const r = f.run;
+  f.setOutcome("unknown");
+  f.advance();
+  await f.engine.tick();
+  assert.equal(f.run.phase, "canary");
+  await assert.rejects(f.engine.approve(r.id, r.approval!.id), /Stale/);
+});
+test("delayed promotion alarm rolls back instead of using stale approved evidence", async () => {
+  const f = fixture();
+  await healthy(f);
+  const r = f.run;
+  await f.engine.approve(r.id, r.approval!.id);
+  f.advance(POLICY.freshnessMs + 1);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rolled_back");
+});
+test("overlapping runs are rejected before any external calls; lock survives new engine instance", async () => {
+  const f = fixture();
+  await f.engine.start(CANDIDATE);
+  await assert.rejects(new Lifecycle(f.ports).start(CANDIDATE), /active/);
+  assert.equal(f.writes.length, 0);
+});
+test("failed validation and smoke never change production", async () => {
+  const f = fixture();
+  f.invalidateCandidate();
+  await f.engine.start(CANDIDATE);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rejected");
+  assert.equal(f.writes.length, 0);
+  const g = fixture();
+  await g.engine.start(CANDIDATE);
+  await g.engine.tick();
+  g.setOutcome("unknown");
+  await g.engine.tick();
+  assert.equal(g.run.phase, "rejected");
+  assert.equal(g.writes.length, 0);
+});
+test("lost successful mutation response is recovered through read-back without duplicate POST", async () => {
+  const f = fixture();
+  f.setMutation("lost-response");
+  await canary(f);
+  assert.equal(f.writes.length, 1);
+  assert.equal(f.run.intent, undefined);
+});
+test("unconfirmed mutation retains lock and never blindly retries POST", async () => {
+  const f = fixture();
+  await f.engine.start(CANDIDATE);
+  await f.engine.tick();
+  await f.engine.tick();
+  f.setMutation("not-applied");
+  await f.engine.tick();
+  assert.equal(f.run.phase, "starting_canary");
+  const restarted = new Lifecycle(f.ports);
+  f.advance(POLICY.mutationConfirmationMs);
+  await restarted.tick();
+  assert.equal(f.run.phase, "needs_attention");
+  assert.equal(f.writes.length, 1);
+  await assert.rejects(restarted.start(CANDIDATE), /active/);
+  await assert.rejects(restarted.rollback(f.run.id), /pending/);
+  await assert.rejects(restarted.reconcile(f.run.id), /Unresolved/);
+});
+test("rollback failure is not reported as success and preserves lock", async () => {
+  const f = fixture();
+  await canary(f);
+  await f.engine.rollback(f.run.id);
+  f.setMutation("not-applied");
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rolling_back");
+  f.advance(POLICY.mutationConfirmationMs);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "needs_attention");
+  assert.equal(f.writes.length, 2);
+});
+test("deployment drift blocks approval and rollback rather than overwriting another writer", async () => {
+  const f = fixture();
+  await healthy(f);
+  const r = f.run;
+  f.drift();
+  await assert.rejects(f.engine.approve(r.id, r.approval!.id), /changed/);
+  assert.equal(f.run.phase, "needs_attention");
+  assert.equal(f.writes.length, 1);
+  await assert.rejects(f.engine.rollback(r.id), /own rollback/);
+  f.restoreExternally();
+  await f.engine.reconcile(r.id);
+  assert.equal(f.run.phase, "rolled_back");
+});
+test("control-plane read failure cannot release the lock or report rollback success", async () => {
+  const f = fixture();
+  await canary(f);
+  f.setReadsFail(true);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "needs_attention");
+  assert.equal(f.writes.length, 1);
+});
+test("sample count, endpoint coverage, freshness and latency boundaries", async () => {
+  const f = fixture();
+  await healthy(f);
+  const r = f.run;
+  const now = f.now();
+  assert.equal(evaluate(r, now), "healthy");
+  assert.equal(
+    evaluate(
+      { ...r, samples: r.samples.filter((s) => s.endpoint === "/health") },
+      now
+    ),
+    "inconclusive"
+  );
+  assert.equal(
+    evaluate(
+      { ...r, samples: r.samples.map((s) => ({ ...s, id: "duplicate" })) },
+      now
+    ),
+    "inconclusive"
+  );
+  assert.equal(evaluate(r, now + POLICY.windowMs + 1), "inconclusive");
+  assert.equal(
+    evaluate(
+      {
+        ...r,
+        samples: r.samples.map((s) => ({
+          ...s,
+          latencyMs: s.version === CANDIDATE ? 201 : 100
+        }))
+      },
+      now
+    ),
+    "unhealthy"
+  );
+  assert.equal(
+    evaluate(
+      { ...r, samples: r.samples.map((s) => ({ ...s, latencyMs: NaN })) },
+      now
+    ),
+    "inconclusive"
+  );
+});
+
+test("HTTP errors use candidate versus stable thresholds, not any-error rollback", async () => {
+  const f = fixture();
+  await healthy(f);
+  const r = f.run;
+  const now = f.now();
+  const errors = (stableErrors: number, candidateErrors: number) => {
+    const copy = structuredClone(r);
+    const used: Record<string, number> = {};
+    copy.samples = copy.samples.map((s) => {
+      const key = s.version + s.endpoint;
+      const i = used[key] ?? 0;
+      used[key] = i + 1;
+      return {
+        ...s,
+        outcome:
+          i < (s.version === STABLE ? stableErrors : candidateErrors)
+            ? "http_error"
+            : "pass"
+      };
+    });
+    return copy;
+  };
+  assert.equal(
+    evaluate(errors(1, 1), now),
+    "healthy",
+    "matching 10% failures do not roll back"
+  );
+  assert.equal(
+    evaluate(errors(0, 1), now),
+    "inconclusive",
+    "isolated failure waits for evidence"
+  );
+  assert.equal(
+    evaluate(errors(0, 3), now),
+    "unhealthy",
+    "3 failures with regression roll back"
+  );
+  assert.equal(
+    evaluate(errors(2, 2), now),
+    "inconclusive",
+    "bad stable baseline cannot authorize promotion"
+  );
+});
+test("post-promotion failure rolls back; missing evidence times out; lock remains held", async () => {
+  for (const outcome of ["assertion_failure", "unknown"] as const) {
+    const f = fixture();
+    await healthy(f);
+    const r = f.run;
+    await f.engine.approve(r.id, r.approval!.id);
+    await f.engine.tick();
+    assert.equal(f.run.phase, "verifying_promotion");
+    await assert.rejects(f.engine.start(CANDIDATE), /active/);
+    f.setOutcome(outcome);
+    f.advance();
+    await f.engine.tick();
+    if (outcome === "unknown") {
+      assert.equal(f.run.phase, "verifying_promotion");
+      f.advance(POLICY.postPromotionDeadlineMs);
+      await f.engine.tick();
+    }
+    assert.equal(f.run.phase, "rolling_back");
+    await f.engine.tick();
+    assert.equal(f.run.phase, "rolled_back");
+  }
+});

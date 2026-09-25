@@ -15,10 +15,19 @@
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/agents/*", "/oauth/*"]
+    "run_worker_first": [
+      "/agents/*",
+      "/oauth/*",
+      "/api/deployment",
+      "/api/deployment/*"
+    ]
   },
   "durable_objects": {
     "bindings": [
+      {
+        "class_name": "DeploymentController",
+        "name": "DeploymentController"
+      },
       {
         "class_name": "ChatAgent",
         "name": "ChatAgent"
@@ -29,6 +38,10 @@
     {
       "new_sqlite_classes": ["ChatAgent"],
       "tag": "v1"
+    },
+    {
+      "new_sqlite_classes": ["DeploymentController"],
+      "tag": "v2"
     }
   ],
   "observability": {

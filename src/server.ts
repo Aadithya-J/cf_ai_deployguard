@@ -12,6 +12,8 @@ import {
   wrapLanguageModel
 } from "ai";
 import { z } from "zod";
+import type { DeploymentEnv } from "./deployment/controller";
+export { DeploymentController } from "./deployment/controller";
 
 export class ChatAgent extends AIChatAgent<Env> {
   maxPersistedMessages = 100;
@@ -217,9 +219,12 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
 }
 
 export default {
-  async fetch(request: Request, env: Env) {
+  async fetch(request: Request, env: DeploymentEnv) {
+    if (new URL(request.url).pathname.startsWith("/api/deployment")) {
+      return env.DeploymentController.getByName("demo-target").fetch(request);
+    }
     return (
-      (await routeAgentRequest(request, env)) ||
+      (await routeAgentRequest(request, { ChatAgent: env.ChatAgent })) ||
       new Response("Not found", { status: 404 })
     );
   }

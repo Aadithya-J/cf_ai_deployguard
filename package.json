@@ -15,7 +15,8 @@
     "lint": "oxlint src/",
     "check": "oxfmt --check src package.json tsconfig.json vite.config.ts wrangler.jsonc index.html README.md && oxlint src/ && tsc",
     "demo:types": "wrangler types --config demo-worker/wrangler.jsonc demo-worker/worker-configuration.d.ts",
-    "demo:check": "npm run demo:types && tsc -p demo-worker/tsconfig.json && oxlint demo-worker/src/ && oxfmt --check demo-worker"
+    "demo:check": "npm run demo:types && tsc -p demo-worker/tsconfig.json && oxlint demo-worker/src/ && oxfmt --check demo-worker",
+    "test": "node --test src/deployment/*.test.ts"
   },
   "dependencies": {
     "@cloudflare/ai-chat": "^0.9.3",
