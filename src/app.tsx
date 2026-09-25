@@ -16,6 +16,7 @@ import {
   XIcon,
   ArrowLeftIcon
 } from "@phosphor-icons/react";
+import type { RehearsalState } from "./deployment/rehearsal";
 import type { Run } from "./deployment/lifecycle";
 import { CHECK_CATALOG } from "./analysis/advisory";
 import {
@@ -485,6 +486,7 @@ function Analysis({ view }: { view: RunView }) {
 function RunDetail({
   view,
   live,
+  admin,
   fresh,
   now,
   pending,
@@ -492,6 +494,7 @@ function RunDetail({
 }: {
   view: RunView;
   live: boolean;
+  admin: boolean;
   fresh: boolean;
   now: number;
   pending: boolean;
@@ -601,7 +604,7 @@ function RunDetail({
           ? "Persisted controller confirmation; not an independent live Cloudflare query."
           : "Allocation at this run’s last confirmation; it may have changed in later runs."}
       </p>
-      {live && !terminal(run) && (
+      {admin && live && !terminal(run) && (
         <section className="actions-section" aria-label="Deployment controls">
           {!fresh && (
             <p className="error">
@@ -714,7 +717,18 @@ function RunDetail({
   );
 }
 
-function Dashboard({ onSignOut }: { onSignOut: () => void }) {
+function Dashboard({
+  admin,
+  onSignOut,
+  onSignIn
+}: {
+  admin: boolean;
+  onSignOut: () => void;
+  onSignIn: () => void;
+}) {
+  const [rehearsal, setRehearsal] = useState<RehearsalState | null>(null);
+  const [rehearsalConfirm, setRehearsalConfirm] = useState(false);
+  const initialSelection = useRef(false);
   const [history, setHistory] = useState<Run[]>([]);
   const [current, setCurrent] = useState<RunView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -737,15 +751,27 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     controller.current = abort;
     const version = ++generation.current;
     try {
-      const [state, runs] = await Promise.all([
+      const [state, runs, preset] = await Promise.all([
         api<RunView | null>(
           "/api/deployment/state",
           undefined,
           "GET",
           abort.signal
         ),
-        api<Run[]>("/api/deployment/history", undefined, "GET", abort.signal)
+        api<Run[]>("/api/deployment/history", undefined, "GET", abort.signal),
+        api<RehearsalState>(
+          "/api/demo/rehearsal",
+          undefined,
+          "GET",
+          abort.signal
+        )
       ]);
+      if (!admin && !initialSelection.current && !selection.current) {
+        selection.current =
+          runs.find((r) => r.phase === "promoted" && r.source)?.id ?? null;
+        setSelected(selection.current);
+      }
+      initialSelection.current = true;
       const id = selection.current;
       const detail =
         id && id !== state?.run.id
@@ -758,6 +784,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           : state;
       if (generation.current !== version) return;
       setCurrent(state);
+      setRehearsal(preset);
       setHistory(runs);
       setView(detail);
       setLastSync(Date.now());
@@ -772,7 +799,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
       setError((error as Error).message);
       setLoaded(true);
     }
-  }, [onSignOut]);
+  }, [onSignOut, admin]);
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -807,6 +834,10 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const fresh = !error && now - lastSync < 15_000;
   const locked = Boolean(current && !terminal(current.run));
   const action = async (action: string, body: object) => {
+    if (!admin) {
+      setNotice("Admin sign-in is required for deployment controls.");
+      return;
+    }
     setPending(true);
     setNotice("");
     try {
@@ -843,23 +874,30 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
             <ChatCircleDotsIcon size={19} />
             Ask DeployGuard
           </button>
-          <button
-            className="button quiet icon-button"
-            aria-label="Sign out"
-            title="Sign out"
-            onClick={async () => {
-              try {
-                await api("/api/session", undefined, "DELETE");
-                onSignOut();
-              } catch (error) {
-                setNotice(
-                  `Could not sign out: ${(error as Error).message}. Retry sign out.`
-                );
-              }
-            }}
-          >
-            <SignOutIcon size={19} />
-          </button>
+          {!admin && (
+            <button className="button secondary" onClick={onSignIn}>
+              Admin sign in
+            </button>
+          )}
+          {admin && (
+            <button
+              className="button quiet icon-button"
+              aria-label="Sign out"
+              title="Sign out"
+              onClick={async () => {
+                try {
+                  await api("/api/session", undefined, "DELETE");
+                  onSignOut();
+                } catch (error) {
+                  setNotice(
+                    `Could not sign out: ${(error as Error).message}. Retry sign out.`
+                  );
+                }
+              }}
+            >
+              <SignOutIcon size={19} />
+            </button>
+          )}
         </div>
       </header>
       <div className="page-heading">
@@ -883,15 +921,18 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           >
             <ArrowClockwiseIcon size={18} />
           </button>
-          <button
-            className="button primary"
-            disabled={!loaded || !fresh || locked}
-            onClick={() => setNewRun(!newRun)}
-            aria-expanded={newRun}
-          >
-            {newRun ? <XIcon size={17} /> : <PlusIcon size={17} />}New
-            deployment
-          </button>
+          {!admin && <span className="demo-label">Reviewer mode</span>}
+          {admin && (
+            <button
+              className="button primary"
+              disabled={!loaded || !fresh || locked}
+              onClick={() => setNewRun(!newRun)}
+              aria-expanded={newRun}
+            >
+              {newRun ? <XIcon size={17} /> : <PlusIcon size={17} />}New
+              deployment
+            </button>
+          )}
         </div>
       </div>
       {error && (
@@ -902,7 +943,146 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           </button>
         </div>
       )}
-      {newRun && (
+      <section className="demo-guide" aria-label="Ready-made demo options">
+        <div>
+          <h2>Explore DeployGuard</h2>
+          <p className="muted">
+            Real deployment evidence, ready to review. No PR setup or Worker
+            upload needed.
+          </p>
+        </div>
+        <div className="demo-options">
+          <button
+            className="demo-option"
+            disabled={!history.some((r) => r.phase === "promoted" && r.source)}
+            onClick={() =>
+              select(
+                history.find((r) => r.phase === "promoted" && r.source)!.id
+              )
+            }
+          >
+            <strong>
+              Review a successful deployment
+              <ArrowUpRightIcon size={16} />
+            </strong>
+            <span>
+              PR #1, AI recommendations, healthy canary and full promotion.
+            </span>
+          </button>
+          <button
+            className="demo-option"
+            disabled={
+              !history.some(
+                (r) => r.phase === "rolled_back" && r.rollbackVerification
+              )
+            }
+            onClick={() =>
+              select(
+                history.find(
+                  (r) => r.phase === "rolled_back" && r.rollbackVerification
+                )!.id
+              )
+            }
+          >
+            <strong>
+              Review a failed canary
+              <ArrowUpRightIcon size={16} />
+            </strong>
+            <span>
+              See the health failure, automatic rollback and verified recovery.
+            </span>
+          </button>
+          <button
+            className="demo-option"
+            disabled={
+              !fresh ||
+              locked ||
+              pending ||
+              !rehearsal ||
+              now < rehearsal.availableAt
+            }
+            onClick={() => setRehearsalConfirm(!rehearsalConfirm)}
+            aria-expanded={rehearsalConfirm}
+          >
+            <strong>
+              Run rollback rehearsal
+              <ArrowUpRightIcon size={16} />
+            </strong>
+            <span>
+              {locked
+                ? "A run is active. Review its progress below."
+                : rehearsal && now < rehearsal.availableAt
+                  ? `Ready again in ${Math.ceil((rehearsal.availableAt - now) / 1000)}s. Stored results remain available.`
+                  : "Launch the prepared failing version on the disposable target and watch it recover."}
+            </span>
+          </button>
+        </div>
+        {rehearsalConfirm && (
+          <div className="confirmation">
+            <h3>Start a real rollback rehearsal?</h3>
+            <p>
+              The prepared candidate will briefly receive 10% of traffic on the
+              disposable demo Worker. It intentionally fails its health check.
+              DeployGuard will restore the healthy version and verify recovery.
+              No approval is needed for this fixed rehearsal.
+            </p>
+            <p className="field-help">
+              This is a real deployment, not a simulation. One run at a time;
+              five minutes between rehearsal starts.
+            </p>
+            <div className="action-buttons">
+              <button
+                className="button primary"
+                disabled={
+                  !fresh ||
+                  locked ||
+                  pending ||
+                  !rehearsal ||
+                  now < rehearsal.availableAt
+                }
+                onClick={async () => {
+                  setPending(true);
+                  setNotice("");
+                  try {
+                    await api("/api/reviewer-session", {});
+                    const run = await api<Run>("/api/demo/rehearsal", {});
+                    selection.current = run.id;
+                    setSelected(run.id);
+                    setRehearsalConfirm(false);
+                    setNotice(
+                      "Rehearsal started. The backend runs the safety checks and recovery automatically."
+                    );
+                  } catch (error) {
+                    setNotice(
+                      `${(error as Error).message} Refresh state before retrying.`
+                    );
+                  } finally {
+                    await refresh();
+                    setPending(false);
+                  }
+                }}
+              >
+                {pending ? "Starting…" : "Start prepared rehearsal"}
+              </button>
+              <button
+                className="button secondary"
+                disabled={pending}
+                onClick={() => setRehearsalConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {!admin && (
+          <p className="demo-access-note">
+            Reviewer access includes stored evidence, chat and the fixed
+            rehearsal. Custom deployments and manual controls require admin
+            sign-in.
+          </p>
+        )}
+      </section>
+      {admin && newRun && (
         <div className="new-run-container">
           <NewRun
             locked={locked || !fresh}
@@ -993,6 +1173,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               key={view.run.id}
               view={view}
               live={view.run.id === current?.run.id}
+              admin={admin}
               fresh={fresh}
               now={now}
               pending={pending}
@@ -1015,14 +1196,16 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
                 Upload a candidate Worker version, then start validation.
                 DeployGuard checks health before asking you to promote.
               </p>
-              <button
-                className="button primary"
-                disabled={!fresh}
-                onClick={() => setNewRun(true)}
-              >
-                New deployment
-                <PlusIcon size={16} />
-              </button>
+              {admin && (
+                <button
+                  className="button primary"
+                  disabled={!fresh}
+                  onClick={() => setNewRun(true)}
+                >
+                  New deployment
+                  <PlusIcon size={16} />
+                </button>
+              )}
             </div>
           )}
         </main>
@@ -1038,7 +1221,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               </button>
             </div>
             <Suspense fallback={<p className="muted">Loading chat…</p>}>
-              <DeploymentChat runId={view?.run.id} />
+              <DeploymentChat runId={view?.run.id} admin={admin} />
             </Suspense>
           </aside>
         )}
@@ -1047,38 +1230,38 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   );
 }
 export default function App() {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [error, setError] = useState("");
+  const [authenticated, setAuthenticated] = useState(false);
+  const [signIn, setSignIn] = useState(false);
   const signedOut = useCallback(() => setAuthenticated(false), []);
   useEffect(() => {
     api<{ authenticated: boolean }>("/api/session")
       .then((data) => setAuthenticated(data.authenticated))
-      .catch((error) => {
-        setError(error.message);
-        setAuthenticated(false);
-      });
+      .catch(() => setAuthenticated(false));
   }, []);
-  if (authenticated === null)
-    return (
-      <main className="loading" aria-live="polite">
-        Opening DeployGuard…
-      </main>
-    );
-  if (!authenticated)
+  if (signIn)
     return (
       <>
-        {error && (
-          <p className="page-alert error" role="alert">
-            {error}
-          </p>
-        )}
+        <button
+          className="button quiet back-to-demo"
+          onClick={() => setSignIn(false)}
+        >
+          <ArrowLeftIcon size={16} />
+          Back to reviewer demo
+        </button>
         <SignIn
           onSignIn={() => {
-            setError("");
             setAuthenticated(true);
+            setSignIn(false);
           }}
         />
       </>
     );
-  return <Dashboard onSignOut={signedOut} />;
+  return (
+    <Dashboard
+      key={authenticated ? "admin" : "reviewer"}
+      admin={authenticated}
+      onSignOut={signedOut}
+      onSignIn={() => setSignIn(true)}
+    />
+  );
 }

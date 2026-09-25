@@ -3,16 +3,65 @@ import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { ArrowUpIcon, StopIcon } from "@phosphor-icons/react";
 import { Streamdown } from "streamdown";
+import { api } from "./model";
 import type { ChatAgent } from "../server";
 
-export default function DeploymentChat({ runId }: { runId?: string }) {
+export default function DeploymentChat({
+  runId,
+  admin
+}: {
+  runId?: string;
+  admin: boolean;
+}) {
+  const [name, setName] = useState<string | null>(
+    admin ? "deployguard-inspector" : null
+  );
+  const [error, setError] = useState("");
+  const connect = useCallback(() => {
+    setError("");
+    void api<{ name: string }>("/api/reviewer-session", {})
+      .then((data) => setName(data.name))
+      .catch((error) => setError(error.message));
+  }, []);
+  useEffect(() => {
+    if (!admin) connect();
+  }, [admin, connect]);
+  if (!name)
+    return (
+      <section className="chat-panel">
+        <h2>Ask DeployGuard</h2>
+        {error ? (
+          <>
+            <p className="error">{error}</p>
+            <button className="button secondary" onClick={connect}>
+              Retry chat connection
+            </button>
+          </>
+        ) : (
+          <p className="muted">Opening your reviewer conversation…</p>
+        )}
+      </section>
+    );
+  return (
+    <ChatConversation key={name} runId={runId} name={name} demo={!admin} />
+  );
+}
+function ChatConversation({
+  runId,
+  name,
+  demo
+}: {
+  runId?: string;
+  name: string;
+  demo: boolean;
+}) {
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const agent = useAgent<ChatAgent>({
     agent: "ChatAgent",
-    name: "deployguard-inspector",
+    name,
     onOpen: useCallback(() => setConnected(true), []),
     onClose: useCallback(() => setConnected(false), [])
   });
@@ -40,6 +89,33 @@ export default function DeploymentChat({ runId }: { runId?: string }) {
         Answers from stored runs. Advice only; deployment controls stay on the
         dashboard.
       </p>
+      {demo && (
+        <p className="field-help">
+          Your own reviewer conversation · up to 20 questions per session.
+        </p>
+      )}
+      <div className="chat-prompts">
+        <button
+          className="button secondary"
+          disabled={!connected || busy || !runId}
+          onClick={() =>
+            send(`Explain the outcome and evidence for deployment ${runId}.`)
+          }
+        >
+          Explain this run
+        </button>
+        <button
+          className="button secondary"
+          disabled={!connected || busy || !runId}
+          onClick={() =>
+            send(
+              `What checks and recommendations are recorded for deployment ${runId}? Distinguish suggested checks from executed checks.`
+            )
+          }
+        >
+          Review recommendations
+        </button>
+      </div>
       <div
         className="chat-messages"
         aria-live="polite"
