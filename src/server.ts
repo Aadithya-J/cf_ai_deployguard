@@ -21,6 +21,10 @@ export class ChatAgent extends AIChatAgent<DeploymentEnv> {
   chatRecovery = true;
 
   private async readDeployment(path: string) {
+    // Legacy starter conversations may have surviving connections after upgrade.
+    // Only the authenticated dashboard conversation gets deployment read access.
+    if (this.name !== "deployguard-inspector")
+      throw new Error("Open deployment chat from the authenticated dashboard.");
     const response = await this.env.DeploymentController.getByName(
       "demo-target"
     ).fetch(
