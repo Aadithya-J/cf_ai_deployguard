@@ -11,7 +11,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "test": "node --test src/deployment/*.test.ts src/analysis/*.test.ts src/session.test.ts",
+    "test": "node --test src/deployment/*.test.ts src/analysis/*.test.ts src/session.test.ts src/access.test.ts",
     "dev": "vite dev",
     "start": "vite dev",
     "deploy": "vite build && wrangler deploy",

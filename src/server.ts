@@ -13,7 +13,8 @@ import {
 import { z } from "zod";
 import type { DeploymentEnv } from "./deployment/controller";
 import type { Run } from "./deployment/lifecycle";
-import { authorized, sessionResponse } from "./session";
+import { dashboardRequest } from "./access";
+import { publicData, reviewerChatName } from "./demo";
 export { DeploymentController } from "./deployment/controller";
 
 export class ChatAgent extends AIChatAgent<DeploymentEnv> {
@@ -22,9 +23,9 @@ export class ChatAgent extends AIChatAgent<DeploymentEnv> {
 
   private async readDeployment(path: string) {
     // Legacy starter conversations may have surviving connections after upgrade.
-    // Only the authenticated dashboard conversation gets deployment read access.
-    if (this.name !== "deployguard-inspector")
-      throw new Error("Open deployment chat from the authenticated dashboard.");
+    // Only dashboard admin and signed reviewer conversations get deployment reads.
+    if (this.name !== "deployguard-inspector" && !reviewerChatName(this.name))
+      throw new Error("Open deployment chat from the dashboard.");
     const response = await this.env.DeploymentController.getByName(
       "demo-target"
     ).fetch(
@@ -34,10 +35,24 @@ export class ChatAgent extends AIChatAgent<DeploymentEnv> {
     );
     if (!response.ok)
       throw new Error(`Deployment read failed (${response.status})`);
-    return response.json();
+    const data = await response.json();
+    return reviewerChatName(this.name) ? publicData(path, data) : data;
   }
 
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
+    if (reviewerChatName(this.name)) {
+      // Bound each public conversation's inference usage without adding storage services.
+      const allowed = await this.ctx.storage.transaction(async (storage) => {
+        const count = (await storage.get<number>("reviewer-questions")) ?? 0;
+        if (count >= 20) return false;
+        await storage.put("reviewer-questions", count + 1);
+        return true;
+      });
+      if (!allowed)
+        throw new Error(
+          "This demo chat has reached its 20-question limit. Deployment records remain available."
+        );
+    }
     const workersai = createWorkersAI({ binding: this.env.AI });
     const result = streamText({
       model: wrapLanguageModel({
@@ -92,34 +107,13 @@ export class ChatAgent extends AIChatAgent<DeploymentEnv> {
 
 export default {
   async fetch(request: Request, env: DeploymentEnv) {
-    const path = new URL(request.url).pathname;
-    if (path === "/api/session")
-      return sessionResponse(request, env.DEPLOYGUARD_ADMIN_TOKEN);
-    if (
-      path.startsWith("/api/deployment") ||
-      path.startsWith("/api/analysis") ||
-      path.startsWith("/agents/")
-    ) {
-      if (!(await authorized(request, env.DEPLOYGUARD_ADMIN_TOKEN)))
-        return Response.json(
-          { error: "Sign in to DeployGuard." },
-          { status: 401, headers: { "cache-control": "no-store" } }
-        );
-      if (path.startsWith("/agents/")) {
-        if (!/^\/agents\/chat-agent\/deployguard-inspector(?:\/|$)/.test(path))
-          return new Response("Not found", { status: 404 });
-        return (
-          (await routeAgentRequest(request, { ChatAgent: env.ChatAgent })) ??
-          new Response("Not found", { status: 404 })
-        );
-      }
-      const forwarded = new Request(request);
-      forwarded.headers.set(
-        "Authorization",
-        `Bearer ${env.DEPLOYGUARD_ADMIN_TOKEN}`
-      );
-      return env.DeploymentController.getByName("demo-target").fetch(forwarded);
-    }
-    return new Response("Not found", { status: 404 });
+    return dashboardRequest(request, {
+      secret: env.DEPLOYGUARD_ADMIN_TOKEN,
+      controller: (forwarded) =>
+        env.DeploymentController.getByName("demo-target").fetch(forwarded),
+      agent: async (forwarded) =>
+        (await routeAgentRequest(forwarded, { ChatAgent: env.ChatAgent })) ??
+        new Response("Not found", { status: 404 })
+    });
   }
 } satisfies ExportedHandler<Env>;

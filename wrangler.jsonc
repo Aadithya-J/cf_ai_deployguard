@@ -18,6 +18,8 @@
     "run_worker_first": [
       "/agents/*",
       "/api/session",
+      "/api/reviewer-session",
+      "/api/demo/rehearsal",
       "/api/deployment",
       "/api/deployment/*",
       "/api/analysis",

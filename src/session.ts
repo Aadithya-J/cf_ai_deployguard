@@ -103,3 +103,48 @@ export async function sessionResponse(request: Request, secret?: string) {
   );
   return Response.json({ authenticated: Boolean(token) }, { headers });
 }
+
+const REVIEWER_COOKIE = "deployguard_reviewer";
+// Different signing domain from admin sessions: reviewer cookies never grant admin rights.
+export async function reviewerName(request: Request, secret?: string) {
+  if (!secret) return null;
+  const value = request.headers
+    .get("cookie")
+    ?.split(";")
+    .map((x) => x.trim())
+    .find((x) => x.startsWith(`${REVIEWER_COOKIE}=`))
+    ?.slice(REVIEWER_COOKIE.length + 1);
+  if (!value) return null;
+  const check = new Request(request.url, {
+    headers: { cookie: `${COOKIE}=${value}` }
+  });
+  if (!(await validSession(check, `${secret}:reviewer-v1`))) return null;
+  return `reviewer-${value.split(".")[1]}`;
+}
+export async function reviewerSessionResponse(
+  request: Request,
+  secret?: string
+) {
+  const headers = new Headers({ "cache-control": "no-store" });
+  if (request.method !== "POST" || !sameOrigin(request))
+    return Response.json(
+      { error: "Same-origin POST required." },
+      { status: 403, headers }
+    );
+  if (!secret)
+    return Response.json(
+      { error: "Demo chat is not configured." },
+      { status: 503, headers }
+    );
+  const existing = await reviewerName(request, secret);
+  if (existing) return Response.json({ name: existing }, { headers });
+  const token = await issueSession(`${secret}:reviewer-v1`);
+  headers.set(
+    "set-cookie",
+    `${REVIEWER_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${TTL}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`
+  );
+  return Response.json(
+    { name: `reviewer-${token.split(".")[1]}` },
+    { headers }
+  );
+}

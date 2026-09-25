@@ -573,3 +573,21 @@ test("rollback drift or control-plane outage prevents completion without another
     await assert.rejects(f.engine.start(CANDIDATE), /active/);
   }
 });
+
+test("prepared rehearsal refuses changed stable and preserves the normal run lock", async () => {
+  const f = fixture();
+  await f.engine.start(CANDIDATE, undefined, undefined, {
+    preset: "rollback-demo",
+    expectedStable: CANDIDATE
+  });
+  await assert.rejects(() => f.engine.start(CANDIDATE));
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rejected");
+  assert.equal(f.writes.length, 0);
+  await f.engine.start(CANDIDATE, undefined, undefined, {
+    preset: "rollback-demo",
+    expectedStable: STABLE
+  });
+  await f.engine.tick();
+  assert.equal(f.run.phase, "smoke");
+});

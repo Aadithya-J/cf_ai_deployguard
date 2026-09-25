@@ -1,3 +1,4 @@
+import { REHEARSAL, type RehearsalState } from "./rehearsal.ts";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 import { GitHubReader, boundedText, parsePullUrl } from "../analysis/github.ts";
@@ -34,7 +35,21 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
     return next;
   }
   private async saveRun(run: Run) {
-    await this.ctx.storage.put({ current: run, [`run:${run.id}`]: run });
+    await this.ctx.storage.put({
+      current: run,
+      [`run:${run.id}`]: run,
+      ...(run.rehearsal
+        ? {
+            rehearsal: {
+              id: REHEARSAL.id,
+              candidate: REHEARSAL.candidate,
+              stable: REHEARSAL.stable,
+              availableAt: run.createdAt + REHEARSAL.cooldownMs,
+              lastRunId: run.id
+            }
+          }
+        : {})
+    });
   }
   private async reserveAnalysis(record: AnalysisRecord) {
     const key = `association:${record.candidate}`;
@@ -250,6 +265,16 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
     // Reads do not wait behind slow analysis or probe batches. Storage snapshots are durable.
     const path = new URL(request.url).pathname;
     if (request.method === "GET") {
+      if (path === "/api/deployment/rehearsal")
+        return Response.json(
+          (await this.ctx.storage.get<RehearsalState>("rehearsal")) ?? {
+            id: REHEARSAL.id,
+            candidate: REHEARSAL.candidate,
+            stable: REHEARSAL.stable,
+            availableAt: 0
+          },
+          { headers: { "cache-control": "no-store" } }
+        );
       if (path === "/api/deployment/state")
         return this.readState(await this.ctx.storage.get<Run>("current"));
       if (path === "/api/deployment")
@@ -290,7 +315,19 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
           await this.ctx.storage.setAlarm(Date.now() + POLICY.intervalMs);
         }
         let run: Run;
-        if (path === "/api/deployment/start") {
+        if (path === "/api/deployment/rehearsal") {
+          z.object({}).strict().parse(body);
+          const previous =
+            await this.ctx.storage.get<RehearsalState>("rehearsal");
+          if (previous && Date.now() < previous.availableAt)
+            throw new Error(
+              "Rehearsal cooling down; review its stored run or wait until the displayed time"
+            );
+          run = await engine.start(REHEARSAL.candidate, undefined, undefined, {
+            preset: "rollback-demo",
+            expectedStable: REHEARSAL.stable
+          });
+        } else if (path === "/api/deployment/start") {
           const input = z
             .object({
               candidate: z.string().uuid(),

@@ -64,6 +64,7 @@ export interface Run {
   source?: { analysisId: string; commitSha: string; prUrl: string };
   request?: { prUrl: string; expectedCommitSha?: string };
   analysisId?: string;
+  rehearsal?: { preset: "rollback-demo"; expectedStable: string };
   candidate: string;
   stable: string;
   phase: Phase;
@@ -234,7 +235,8 @@ export class Lifecycle {
   async start(
     candidate: string,
     source?: Run["source"],
-    request?: Run["request"]
+    request?: Run["request"],
+    rehearsal?: Run["rehearsal"]
   ) {
     if (!uuid.test(candidate))
       throw new Error("Candidate must be a version UUID");
@@ -247,6 +249,7 @@ export class Lifecycle {
       candidate,
       ...(source ? { source, analysisId: source.analysisId } : {}),
       ...(request ? { request } : {}),
+      ...(rehearsal ? { rehearsal } : {}),
       stable: "",
       phase: request ? "analyzing" : "validating",
       policy: { ...POLICY },
@@ -464,12 +467,16 @@ export class Lifecycle {
         if (
           current.versions.length !== 1 ||
           current.versions[0].percentage !== 100 ||
-          current.versions[0].version_id === r.candidate
+          current.versions[0].version_id === r.candidate ||
+          (r.rehearsal &&
+            current.versions[0].version_id !== r.rehearsal.expectedStable)
         ) {
           await this.move(
             r,
             "rejected",
-            "Requires one stable version at 100% and a distinct candidate"
+            r.rehearsal
+              ? "Rehearsal requires the configured healthy stable version at 100%; ask an admin to restore it"
+              : "Requires one stable version at 100% and a distinct candidate"
           );
           return r;
         }
