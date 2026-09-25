@@ -12,7 +12,7 @@ export default {
     } else if (url.pathname === "/health") {
       result = { ok: true };
     } else if (url.pathname === "/api/greeting") {
-      const name = url.searchParams.get("name") || "DeployGuard";
+      const name = url.searchParams.get("name")?.trim() || "DeployGuard";
       if (name.length > 80) {
         status = 400;
         result = { error: "Name must be at most 80 characters" };
