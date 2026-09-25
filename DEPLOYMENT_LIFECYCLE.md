@@ -52,7 +52,7 @@ Only `rejected`, `promoted`, and `rolled_back` release the run lock. `needs_atte
 | Attribution           | Response UUID must match requested version. Header/body UUID, release, request ID, cache policy and endpoint content must agree             |
 | Minimum evidence      | At least 30 seconds of observation, and 10 distinct samples per endpoint per version in the last 60 seconds (40 total minimum)              |
 | Freshness             | Each endpoint/version group must have evidence no older than 15 seconds                                                                     |
-| Error allowance       | Zero known HTTP/payload failures on either version; any known failure initiates rollback                                                    |
+| Error allowance       | Candidate ≥3 HTTP errors and >20% absolute or >5pp above stable triggers rollback; stable >10% is inconclusive                              |
 | Latency               | Each endpoint/version p95 ≤ 2,000 ms; candidate p95 ≤ max(2 × stable p95, stable p95 + 100 ms)                                              |
 | Missing evidence      | Timeouts, unknown version, insufficient samples, invalid timings, or stale evidence are inconclusive; never healthy                         |
 | Inconclusive handling | Keep current canary allocation while collecting evidence; invalidate outstanding approval; restore stable at the deadline                   |
@@ -86,7 +86,7 @@ The controller is disabled with HTTP 503 until both secrets exist:
 - `DEPLOYGUARD_API_TOKEN`: account-scoped Cloudflare API token with Workers Scripts Write permission for the existing account.
 - `DEPLOYGUARD_ADMIN_TOKEN`: separate strong bearer token for the developer operating this demo.
 
-For local use, add them to ignored `.dev.vars`; use Wrangler secrets for a deployed controller. Neither credential is bundled into the frontend. No credentials were created, copied from the CLI, or installed by this change, and the controller was not deployed remotely.
+For local use, add them to ignored `.dev.vars`; use Wrangler secrets for a deployed controller. Neither credential is bundled into the frontend. The deployed verification uses dedicated user-provided Cloudflare/GitHub tokens and a separate generated admin secret. See [live backend verification](BACKEND_VERIFICATION.md).
 
 Every endpoint requires `Authorization: Bearer <DEPLOYGUARD_ADMIN_TOKEN>`:
 
@@ -127,7 +127,7 @@ Run `npm test` on a Node version with native TypeScript support (tested on Node 
 
 Focused automated cases cover healthy approval/promotion; unhealthy rollback; inconclusive deadline rollback; wrong, expired and replayed approvals; invalidation after telemetry loss; delayed promotion; overlapping runs across controller reconstruction; validation/smoke failure; lost mutation response; unconfirmed mutation; failed rollback; external drift; control-plane outage; sample coverage/freshness/latency; HTTP regression thresholds; post-promotion success, failure and timeout; and Cloudflare adapter URL, attribution and API validation.
 
-A separate local Workers runtime check exercises unauthorized access, simultaneous starts, and persistence across a runtime restart with outbound networking disabled. The full Vite Worker/frontend build is also checked. These local/fake-adapter tests do not constitute a live end-to-end deployment of the new controller. The earlier manual deployment verification is recorded separately in `demo-worker/VERIFICATION.md`.
+A separate local Workers runtime check exercises unauthorized access, simultaneous starts, and persistence across a runtime restart with outbound networking disabled. The full Vite Worker/frontend build is also checked. The actual deployed Worker/Durable Object flow is recorded in [live backend verification](BACKEND_VERIFICATION.md). The earlier manual deployment verification is recorded separately in `demo-worker/VERIFICATION.md`.
 
 ## Current official references
 

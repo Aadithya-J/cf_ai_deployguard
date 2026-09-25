@@ -14,7 +14,7 @@
 
 ## API
 
-Uses the same admin bearer authentication and fixed singleton Durable Object as deployment control. GitHub/AI work runs outside the deployment/alarm serialization queue; only the short immutable association reservation uses that queue.
+Uses the same admin bearer authentication and fixed singleton Durable Object as deployment control. Standalone GitHub/AI analysis runs outside the deployment/alarm serialization queue; only its short immutable association reservation uses that queue. Integrated PR-run analysis runs inside the serialized alarm lifecycle before any traffic mutation. Read endpoints remain available during analysis.
 
 ```http
 POST /api/analysis
@@ -71,7 +71,7 @@ A deployment start can include `prUrl` and an optional `expectedCommitSha` to cr
 3. The merge-base/head snapshot and hash enable traceability, but do not prove build provenance. Decide how the uploader will attest version-to-commit mapping before using real applications.
 4. Unsupported/large/binary diffs and GitHub rate-limit/access failures are explicit errors. No partial analysis, background ingestion, chunked summaries or automatic retries were added.
 5. There is no dashboard, GitHub OAuth/App installation flow, per-user identity or durable analysis job queue yet. The shared admin token and optional repository token fit the current single-developer demo.
-6. [PR #1 live verification](demo-worker/PR1_VERIFICATION.md) now covers authenticated GitHub retrieval, an uploaded candidate, 20 live endpoint checks, and real Workers AI analysis. The analysis service used local file persistence for this check; the deployed controller HTTP/storage path was not exercised. Production traffic was unchanged.
+6. [PR #1 live verification](demo-worker/PR1_VERIFICATION.md) now covers authenticated GitHub retrieval, an uploaded candidate, 20 live endpoint checks, and real Workers AI analysis. That initial check used local file persistence and left production traffic unchanged. [Live backend verification](BACKEND_VERIFICATION.md) subsequently exercises the deployed HTTP/Durable Object path and real deployment lifecycle.
 
 ## Verification and official references
 
