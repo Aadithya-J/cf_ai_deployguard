@@ -89,3 +89,21 @@ The default unauthenticated dashboard now offers successful PR #1 review, failed
 Rehearsal inputs are server-pinned, including the expected stable version. A changed stable rejects validation without deployment mutation. Existing durable locking applies; a persisted five-minute cooldown is recorded atomically with the run. An unexpected healthy rehearsal still follows the existing approval timeout; public reviewers cannot promote it. `needs_attention` requires admin investigation.
 
 This is shared activity on the disposable target. Public chat's 20-question conversation budget is not global abuse protection. Synthetic recovery samples are local observations, not proof of worldwide convergence. Prepared review shortcuts search the existing capped 100-run history; a long-running public installation would need a deliberate retention/pinning policy to preserve the original examples.
+
+## Repeatable PR rehearsals — 2026-09-25
+
+Application version: `ccbe64ee-eb25-4764-9beb-d46ba1730a41`. Both presets now include pinned PR analysis. The new healthy preset permits bounded public approval, a real temporary 100% deployment, post-promotion verification and automatic stable restoration. The original admin workflow is unchanged.
+
+- `npm run check` passed; 53 tests passed. New coverage includes the complete healthy reset lifecycle across engine restart, stale/replayed approvals, rejection of ordinary-run public approval, abandoned approval, reset timeout retaining the lock, strict public command input and limited demo approval projection.
+- Failure PR: https://github.com/Aadithya-J/deployguard/pull/3 at `c1abd8a4e4500826f82346283952f9f8fe6cc792`; candidate `366a3cce-118d-41f6-bef6-63d6f836703b`.
+- Public failure run: `a69d8c65-68f2-4007-8a5b-4a9ae8bdf2d3`. Workers AI returned structured high-risk advisory analysis. Candidate greeting probes recorded 9 HTTP errors / 10 requests versus stable 0 / 10; both health endpoints passed. Deterministic HTTP thresholds triggered rollback. Fourteen ordinary stable recovery samples verified restoration. Final outcome `rolled_back`.
+- Desktop and 390px mobile inspection confirmed visible PR analysis and recovery evidence, no page overflow and no JavaScript errors.
+- Failure probability is deliberately 70%, not an exact promised sample percentage. Preview requests bypass the injected fault so the canary exercises HTTP error policy. The failure is explicitly labeled in PR #3; this is a controlled demonstration, not a production workload.
+- Both presets share the existing five-minute cooldown and durable run lock. Approval is limited to the healthy preset and expires under the ordinary freshness/deadline rules. Other visitors may approve the shared prepared run; these are public reviewer controls, not individual ownership or authorization identities.
+- Healthy PR: https://github.com/Aadithya-J/deployguard/pull/2 at `e74b06b394e52c6c7d2427d49dba63e844f7c39c`; candidate `892838ac-3d86-4c35-ae7a-947e3e9611a7`.
+- After waiting for the real shared cooldown, public healthy run `219b24af-c9e4-4374-a9c3-fde9ac6834dc` completed PR analysis (low advisory risk), smoke and canary. The public browser used **Approve demo → Confirm temporary promotion**. Cloudflare deployment `bc3df8ed-0f62-4c74-9be4-48a7acc9293c` independently confirmed candidate at 100%.
+- Browser reload during promotion did not stop progress. About 35 seconds of post-promotion verification passed, then the controller automatically restored stable. Sixteen ordinary recovery samples verified the reset. Final run outcome: `demo_complete`.
+- Final deployment `2ce4a483-d634-4a0b-9db7-ce871be311a2` restored original stable `eb3a0ea3-b238-40c0-833e-62dc61c7f35e` at 100%. No manual recovery was needed. Both run records and PR analyses are publicly reviewable.
+- Final UI copy uses **Health evidence before restoration** for retained evidence, covering both canary failure and verified-promotion reset without mislabeling promotion probes as canary probes.
+
+Final application version after the evidence-label clarification: `774168b7-6c50-4059-a946-a0233ed6ef6c`. Formatting, lint and TypeScript passed again before deployment; no deployment-controller behavior changed after the two live checks.

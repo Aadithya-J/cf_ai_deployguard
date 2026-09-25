@@ -148,3 +148,15 @@ A separate local Workers runtime check exercises unauthorized access, simultaneo
 - [Version URLs](https://developers.cloudflare.com/workers/versions-and-deployments/version-urls/): independent smoke testing and limitations.
 - [Durable Object rules](https://developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/): persistent coordination and concurrency.
 - [Durable Object alarms](https://developers.cloudflare.com/durable-objects/api/alarms/): durable scheduling and retries.
+
+## Repeatable reviewer rehearsals
+
+Two server-pinned presets reuse the ordinary PR analysis and safety engine. Failure uses PR #3's intermittent greeting errors; healthy uses PR #2's whitespace normalization. Both record the immutable expected head SHA before analysis. Shared locking and the persisted five-minute cooldown apply to both.
+
+Public `POST /api/demo/healthy` and `POST /api/demo/rehearsal` accept only `{}` and require a signed reviewer session plus same origin. Public `POST /api/demo/approve` accepts only `runId` and `approvalId`; the engine additionally requires `promotion-demo`, the current run, a matching approval, fresh healthy evidence, unexpired deadlines and unchanged actual deployment state. Ordinary mutation endpoints remain admin-only.
+
+For healthy rehearsals only:
+
+`awaiting_approval → promoting → verifying_promotion → rolling_back → verifying_rollback → demo_complete`
+
+Here `rolling_back` executes an intentional reset after successful temporary promotion, with that reason persisted in the timeline. The promotion verification timestamp is written atomically with the reset transition. The backend alarm drives reset through restarts/browser closure. `demo_complete` releases the lock only after stable allocation readback and the same clean attributed traffic window used for failure recovery. Failed promotion or expired approval ends as `rolled_back`, not `demo_complete`; uncertain reset ends as `needs_attention` with the lock retained. Normal admin runs still end at `promoted` and are not automatically reset.

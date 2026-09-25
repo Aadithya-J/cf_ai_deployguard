@@ -27,15 +27,16 @@ The app opens in public reviewer mode. Use **Admin sign in** with `DEPLOYGUARD_A
 
 ## Reviewer demo
 
-No new PR, token or version upload is needed. The deployed dashboard provides three prepared choices:
+No new PR, token or version upload is needed. The deployed dashboard provides four prepared choices:
 
 - **Review a successful deployment:** PR #1, immutable commit, AI advice, canary evidence and promotion.
 - **Review a failed canary:** health assertion failure, rollback and attributed stable recovery traffic.
-- **Run rollback rehearsal:** a real, fixed 90/10 deployment of the existing disposable fault fixture, followed by deterministic rollback and recovery verification. The run persists in history and continues if the browser closes.
+- **Run rollback rehearsal:** analyzes PR #3, then runs a real 90/10 canary whose greeting endpoint intentionally returns HTTP 503 about 70% of the time. The existing HTTP error policy triggers rollback and recovery verification.
+- **Run healthy rehearsal:** analyzes PR #2 and runs a healthy canary. Reviewers can approve a temporary real 100% promotion. After the short post-promotion verification, the backend automatically restores the original stable and verifies ordinary traffic before reporting **Demo complete · stable restored**. No browser timer is involved; closing the page does not stop recovery.
 
-The rehearsal accepts no custom parameters. Its candidate and expected stable UUIDs are pinned in `src/deployment/rehearsal.ts`; a changed stable rejects validation before traffic changes. The existing Durable Object lock prevents overlap; a persisted five-minute cooldown limits repeat starts. Public reviewers cannot approve, manually roll back, reconcile, create analyses or start arbitrary deployments. If recovery needs attention, an admin must investigate.
+Both start commands accept no custom parameters and pin the PR head as well as the candidate. A moved PR head fails analysis conservatively. Its candidate and expected stable UUIDs are pinned in `src/deployment/rehearsal.ts`; a changed stable rejects validation before traffic changes. Both presets share the existing Durable Object lock, which prevents overlap; a persisted five-minute cooldown limits repeat starts. Public reviewers can approve only the prepared healthy demo, using a run-specific, expiring approval. They cannot approve ordinary deployments, manually roll back, reconcile, create arbitrary analyses or start arbitrary deployments. If recovery needs attention, an admin must investigate.
 
-Public read responses omit approval capabilities, pending mutation intents and internal errors. Reviewer chat uses a separate signed, HttpOnly cookie and an isolated conversation, with a 20-question budget per conversation. It only reads public deployment fields. This budget is not global abuse protection: new sessions can be created. Rehearsals are shared real target activity, not private simulations; other visitors can watch the active run. Private GitHub links may be inaccessible to reviewers, but stored PR analysis remains visible.
+Public read responses omit ordinary admin approval capabilities, pending mutation intents and internal errors. Reviewer chat uses a separate signed, HttpOnly cookie and an isolated conversation, with a 20-question budget per conversation. It only reads public deployment fields. This budget is not global abuse protection: new sessions can be created. Rehearsals are shared real target activity, not private simulations; other visitors can watch the active run. Private GitHub links may be inaccessible to reviewers, but stored PR analysis remains visible.
 
 ## Admin dashboard flow
 
@@ -69,3 +70,5 @@ DeployGuard secrets must be installed separately with Wrangler; never commit `.d
 - [Dashboard verification](DASHBOARD_VERIFICATION.md)
 
 Limits: synthetic probes from one coordinator do not prove global production health; PR association does not prove build provenance; history is capped at 100 unpaginated records; deployment API read/write races with external writers remain possible. Use the controller as the sole deployment writer during an active run.
+
+The failure fixture deliberately behaves differently on preview and ordinary hostnames, so smoke passes and the demo exercises canary error thresholds. Randomness changes failure timing, not the safety rules. If a reviewer does not approve a healthy demo within the existing 60-second approval window, it restores stable without claiming a successful promotion. Reset failures remain `needs_attention` and block subsequent runs. Both presets expect stable `eb3a0ea3-b238-40c0-833e-62dc61c7f35e`; an ordinary admin promotion to a different stable requires explicitly updating the presets before further rehearsals.
