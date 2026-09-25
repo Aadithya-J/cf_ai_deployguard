@@ -26,14 +26,16 @@ stateDiagram-v2
     verifying_promotion --> promoted: 30 seconds of healthy production probes
     verifying_promotion --> rolling_back: failure or 60-second deadline
     verifying_promotion --> needs_attention: control-plane drift or outage
-    rolling_back --> rolled_back: write stable 100%; verify
+    rolling_back --> verifying_rollback: write stable 100%; confirm allocation
+    verifying_rollback --> rolled_back: 30-second healthy stable traffic window
+    verifying_rollback --> needs_attention: 90-second timeout, drift or unavailable control plane
     starting_canary --> needs_attention: unconfirmed mutation
     promoting --> needs_attention: unconfirmed mutation or drift
     rolling_back --> needs_attention: unconfirmed mutation or drift
     canary --> needs_attention: deployment drift or unavailable control plane
     awaiting_approval --> needs_attention: deployment drift or unavailable control plane
     needs_attention --> rolling_back: reconcile confirmed own mutation
-    needs_attention --> rolled_back: confirmed stable restoration; no ambiguous write
+    needs_attention --> verifying_rollback: confirmed stable restoration; no ambiguous write
 ```
 
 `evaluate()` is a pure function used during `canary`, `awaiting_approval`, promotion preflight, and `verifying_promotion`; it returns `healthy`, `unhealthy`, or `inconclusive`. An operator may also request rollback from an active run when ownership can be established and no mutation is unresolved.
@@ -61,11 +63,21 @@ Only `rejected`, `promoted`, and `rolled_back` release the run lock. `needs_atte
 | Approval wait         | Probing continues. Health loss invalidates approval; failure or expiry initiates rollback                                                   |
 | Mutations             | Persist intent before POST; no `force`, no blind POST retries; read back allocation and run-specific annotation                             |
 | Confirmation deadline | Retry read-back on subsequent alarms for up to 30 seconds; then hold the lock in `needs_attention`                                          |
-| Rollback              | Original stable version at 100%; only report success after Cloudflare read-back confirms it                                                 |
+| Rollback              | Original stable version at 100%, plus a clean ordinary-traffic verification window before success                                           |
 
 These are deliberately strict demo thresholds, not statistically calibrated production SLOs. Probe latency includes networking and is not CPU time. A successful runtime invocation does not establish HTTP success, so the policy uses HTTP status and content directly. The greeting check requires a string ending in `, DeployGuard!`; it permits the intended Hello → Hi candidate change.
 
-Unknown observations remain in the rolling window until they age out. Critical assertion failures trigger rollback before minimum sample counts. HTTP failures are evaluated after the observation/sample requirements. Isolated HTTP errors do not trigger immediate rollback; unknown attribution still prevents promotion. A bad stable baseline does not justify promoting the candidate. Policy version 2 is used for new runs. Nonterminal runs from an older policy are held in `needs_attention`; explicit rollback/reconciliation remains available before starting a fresh run.
+Unknown observations remain in the rolling window until they age out. Critical assertion failures trigger rollback before minimum sample counts. HTTP failures are evaluated after the observation/sample requirements. Isolated HTTP errors do not trigger immediate rollback; unknown attribution still prevents promotion. A bad stable baseline does not justify promoting the candidate. Policy version 3 is used for new runs. Nonterminal runs from an older policy are held in `needs_attention`; explicit rollback/reconciliation remains available before starting a fresh run.
+
+## Rollback traffic verification
+
+`verifying_rollback` retains the target lock after Cloudflare confirms stable at 100%. Each alarm sends ordinary requests to both endpoints with **no version override**. Completion requires at least seven distinct passing samples per endpoint spanning at least 30 seconds, fresh within 15 seconds, with no gaps over 15 seconds. Every sample must have the stable version header, matching response contract, and latency at most 2 seconds.
+
+A candidate response, missing attribution, HTTP error, assertion failure or invalid/slow sample restarts the clean interval across both endpoints. An observation gap requires a fresh interval. The fixed 90-second deadline begins at allocation confirmation and is not extended by failures or process restarts. On timeout the run becomes `needs_attention` and retains its lock; deployment drift or an unavailable control plane also prevents success. Stable allocation is rechecked before and after probing. The controller does not repeat rollback writes during propagation.
+
+Rollback evidence is stored separately in `run.rollbackVerification`, preserving the original failure samples. `observedVersion` records returned header attribution even when it differs from the intended version. The combined API exposes the rollback deadline and counts from rollback evidence while disabling repeated rollback commands during verification. Explicit reconciliation of stable allocation starts a new bounded verification attempt; it never directly marks the run complete. Old-policy recovery uses the new rollback verification policy, while historical terminal records remain unchanged.
+
+These are sampled requests from the coordinator, not proof of zero candidate traffic worldwide. The live rerun is documented in [rollback verification](demo-worker/ROLLBACK_VERIFICATION.md).
 
 ## Implementation
 
@@ -114,7 +126,7 @@ The combined read view exposes persisted evidence, not a fresh Cloudflare API re
 ## Failure recovery and constraints to resolve
 
 1. **External writers:** Cloudflare's deployment API does not expose a compare-and-swap precondition in the documented create operation. Preflight checks detect changed deployment IDs, but cannot eliminate a race with a concurrent dashboard/Wrangler deployment between GET and POST. Use this controller as the sole writer during a run.
-2. **Ambiguous writes:** A timed-out POST may have applied. The controller waits for an allocation plus its run annotation, never retries the POST blindly, and retains the lock if uncertain. Reconciliation can recover an observed own mutation and roll it back, or accept observed stable restoration when there is no unresolved write. If a pending mutation never appears, the lock intentionally remains held—even if an old stable deployment is still active. An explicit operator recovery procedure for definitively abandoned writes is still needed before unattended use; there is no unsafe force-unlock endpoint.
+2. **Ambiguous writes:** A timed-out POST may have applied. The controller waits for an allocation plus its run annotation, never retries the POST blindly, and retains the lock if uncertain. Reconciliation can recover an observed own mutation and roll it back, or begin traffic verification of observed stable restoration when there is no unresolved write. If a pending mutation never appears, the lock intentionally remains held—even if an old stable deployment is still active. An explicit operator recovery procedure for definitively abandoned writes is still needed before unattended use; there is no unsafe force-unlock endpoint.
 3. **Unavailable control plane:** If current Cloudflare state cannot be read, the controller cannot safely promise rollback. It records `needs_attention` and retains the lock. A canary may remain live beyond the nominal deadline during an outage; the deadline is a requested safety action, not a platform guarantee. An operator alert path should be added before unattended use.
 4. **Demo evidence:** This implementation compares controlled synthetic requests, not all organic traffic. It does not ingest GraphQL metrics or stored logs. Validate thresholds against real network variance and add production telemetry before claiming production coverage.
 5. **Approval identity:** The shared admin token is sufficient for one developer and one demo target. Dashboard authentication, attribution to a human identity and a visible approval/recovery screen should precede broader access.

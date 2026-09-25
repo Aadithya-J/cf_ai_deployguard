@@ -39,15 +39,15 @@ The run retained eight samples: four stable passes, two candidate unknowns, one 
 
 Final API allocation, deployment UUID and `deployguard:<run-id>:rolling_back` annotation matched the controller's persisted confirmation. Later history and run reads returned the same terminal record.
 
-## Actual limitation discovered: routing propagation
+## Original limitation discovered: routing propagation
 
 The verification client's **first ordinary request after API-confirmed rollback still returned the failing candidate UUID**. Its immediate-stable assertion failed. A follow-up verification began at 07:38:17 UTC and all twenty requests returned healthy stable; the control-plane deployment remained unchanged.
 
 We did not continuously sample the interval, so this does **not** measure an exact propagation duration. Likewise, the initial unknown candidate samples show attribution was unavailable at first; their precise cause is not retained by the current sample model.
 
-The controller currently uses `rolled_back` to mean allocation confirmed by the control plane. It does not automatically verify restored traffic after rollback, and releases the run lock at that point. This rehearsal confirms automatic rollback and eventual observed traffic restoration, not instantaneous or global convergence.
+At the time of the first rehearsal, the controller used `rolled_back` to mean allocation confirmed by the control plane. It did not automatically verify restored traffic after rollback, and released the run lock at that point. This rehearsal confirms automatic rollback and eventual observed traffic restoration, not instantaneous or global convergence.
 
-**Recommended follow-up before dashboard completion:** a bounded `verifying_rollback` phase using ordinary requests, retaining the lock until healthy stable traffic is observed, with `needs_attention` on timeout. Do not issue repeated rollback writes merely because routing is still propagating. The dashboard should distinguish allocation confirmation from observed traffic recovery. This change was not introduced in this fault-only rehearsal.
+**Gap identified in the first rehearsal (subsequently fixed below):** a bounded `verifying_rollback` phase using ordinary requests, retaining the lock until healthy stable traffic is observed, with `needs_attention` on timeout. Do not issue repeated rollback writes merely because routing is still propagating. The dashboard should distinguish allocation confirmation from observed traffic recovery. This change was not introduced in this fault-only rehearsal.
 
 ## Checks
 
@@ -59,3 +59,30 @@ The controller currently uses `rolled_back` to mean allocation confirmed by the 
 - Failing version remains uploaded and preview-addressable, but has zero production allocation. It is available for later explicit rehearsals.
 
 [Cloudflare version override documentation](https://developers.cloudflare.com/workers/versions-and-deployments/version-overrides/) was consulted: overrides select active versions and callers must check returned attribution. No failure-rate thresholds or safety requirements were relaxed.
+
+## Updated confirmation and live rerun
+
+The propagation gap is now addressed by policy version 3 and `verifying_rollback`. Cloudflare reporting stable at 100% starts traffic verification and retains the lock. The controller requires a clean 30-second sampled interval, at least seven distinct samples per endpoint, freshness/gaps within 15 seconds, valid stable attribution and healthy responses. Candidate/unknown/failing samples reset the clean interval. The deadline remains 90 seconds from allocation confirmation; expiry becomes `needs_attention`, retaining the lock. No rollback POST is repeated during verification. Reconciliation also enters this phase instead of completing directly.
+
+The previous failing candidate was reused with backend version `b98155b1-9563-4ede-9829-a938be54aa41`:
+
+- Persisted run: `2ecad2e3-6d39-4639-9fac-fad35fe2061d`.
+- Canary deployment: `66389d38-e407-4106-b433-f9eba828c5dc`.
+- Final stable deployment: `36790979-9905-49de-9755-556bca3d830d`.
+- Stable remains `eb3a0ea3-b238-40c0-833e-62dc61c7f35e` at 100%; failing candidate remains at 0%.
+
+| UTC      | Observed persisted event                                           |
+| -------- | ------------------------------------------------------------------ |
+| 07:48:22 | Run accepted                                                       |
+| 07:48:37 | Real 90/10 canary confirmed                                        |
+| 07:48:47 | Candidate critical assertion failed; automatic rollback            |
+| 07:48:52 | Stable allocation confirmed; **verifying_rollback**, lock retained |
+| 07:49:32 | **rolled_back**, only after stable ordinary traffic verified       |
+
+The verification phase collected **16 passing samples**, eight per endpoint, spanning approximately **35.3 seconds**. It lasted about 40 seconds after API confirmation; the extra batch was necessary because the earlier samples did not yet span a full 30 seconds. No candidate or unknown response was observed during this rerun's rollback verification. The original failed canary evidence was preserved separately.
+
+While `verifying_rollback` was active, an overlapping start and repeated rollback command both returned HTTP 409. The final deployment allocation/annotation matched the stored run, historical reads matched the terminal record, and 20 additional ordinary requests all returned healthy stable responses. No manual recovery or approval was needed.
+
+All **39 automated tests** passed, including rollback lock retention across controller reconstruction, successful clean windows, candidate/unknown window resets, timeout on missing/failing evidence, endpoint coverage, duplicate/stale samples, observation gaps, drift/outage and reconciliation without repeated deployment writes. TypeScript, lint, formatting and the deployed build passed. Timeout was exercised by focused tests, not by deliberately preventing traffic convergence on Cloudflare.
+
+This verifies sampled recovery from this coordinator; it does not establish that every global edge location has stopped serving the candidate.
