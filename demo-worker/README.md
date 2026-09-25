@@ -67,3 +67,18 @@ curl -i 'https://deployguard-demo-target.jlaadithya.workers.dev/health' \
 Always assert the returned UUID. An override for a version outside the active deployment falls back to normal routing. Preview URLs remain independently accessible after restoring stable. This target is intentionally public and contains no sensitive data.
 
 See [the verification report](VERIFICATION.md) for actual versions, deployment IDs, observations, constraints and official documentation.
+
+## Opt-in live rollback fixture
+
+`fixtures/canary-failure.ts` is a separate entry point for the disposable target. It preserves version attribution and returns HTTP 200 with `ok: false` on `/health` only at the normal target hostname. Preview URLs remain healthy, allowing smoke to pass before the existing critical-assertion rule triggers during canary. This is deliberate fault injection, not a realistic prediction of environment parity.
+
+The default entry point and safety policy are unchanged. The fixture has no activation endpoint, persistent state, secrets, or additional bindings. To rehearse:
+
+```sh
+node --test demo-worker/fixtures/canary-failure.test.ts
+npx wrangler versions upload demo-worker/fixtures/canary-failure.ts \
+  --config demo-worker/wrangler.jsonc --var RELEASE:rollback-rehearsal \
+  --tag rollback-rehearsal --message 'Intentional canary health assertion failure'
+```
+
+Submit the uploaded UUID to the deployed controller's `POST /api/deployment/start` as `candidate`, then inspect the persisted run until `rolled_back`. Do not directly deploy the failing version at 100%. This fixture is not PR #1 and must not reuse its analysis association. See [live rollback verification](ROLLBACK_VERIFICATION.md) for the observed result.
