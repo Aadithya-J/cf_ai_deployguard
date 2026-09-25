@@ -48,7 +48,7 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
               id: run.rehearsal.preset,
               candidate: run.candidate,
               stable: run.rehearsal.expectedStable,
-              availableAt: run.createdAt + REHEARSAL.cooldownMs,
+              availableAt: 0,
               lastRunId: run.id
             }
           }
@@ -271,10 +271,13 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
     if (request.method === "GET") {
       if (path === "/api/deployment/rehearsal")
         return Response.json(
-          (await this.ctx.storage.get<RehearsalState>("rehearsal")) ?? {
-            id: REHEARSAL.id,
-            candidate: REHEARSAL.candidate,
-            stable: REHEARSAL.stable,
+          {
+            ...((await this.ctx.storage.get<RehearsalState>("rehearsal")) ?? {
+              id: REHEARSAL.id,
+              candidate: REHEARSAL.candidate,
+              stable: REHEARSAL.stable
+            }),
+            // Ignore legacy cooldown timestamps, including for older clients.
             availableAt: 0
           },
           { headers: { "cache-control": "no-store" } }
@@ -327,12 +330,6 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
             ? HEALTHY_REHEARSAL
             : REHEARSAL;
           z.object({}).strict().parse(body);
-          const previous =
-            await this.ctx.storage.get<RehearsalState>("rehearsal");
-          if (previous && Date.now() < previous.availableAt)
-            throw new Error(
-              "Rehearsal cooling down; review its stored run or wait until the displayed time"
-            );
           run = await engine.start(
             preset.candidate,
             undefined,

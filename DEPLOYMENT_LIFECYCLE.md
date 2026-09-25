@@ -151,7 +151,7 @@ A separate local Workers runtime check exercises unauthorized access, simultaneo
 
 ## Repeatable reviewer rehearsals
 
-Two server-pinned presets reuse the ordinary PR analysis and safety engine. Failure uses PR #3's intermittent greeting errors; healthy uses PR #2's whitespace normalization. Both record the immutable expected head SHA before analysis. Shared locking and the persisted five-minute cooldown apply to both.
+Two server-pinned presets reuse the ordinary PR analysis and safety engine. Failure uses PR #3's intermittent greeting errors; healthy uses PR #2's whitespace normalization. Both record the immutable expected head SHA before analysis. Shared locking applies to both. There is no cooldown after completion; legacy stored cooldown timestamps are ignored. Active runs and unresolved recovery continue to prevent overlapping starts.
 
 Public `POST /api/demo/healthy` and `POST /api/demo/rehearsal` accept only `{}` and require a signed reviewer session plus same origin. Public `POST /api/demo/approve` accepts only `runId` and `approvalId`; the engine additionally requires `promotion-demo`, the current run, a matching approval, fresh healthy evidence, unexpired deadlines and unchanged actual deployment state. Ordinary mutation endpoints remain admin-only.
 

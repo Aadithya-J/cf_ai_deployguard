@@ -677,3 +677,28 @@ test("abandoned demo approval restores stable without reporting successful promo
   await finishRollback(f);
   assert.equal(f.run.rehearsal?.promotionVerifiedAt, undefined);
 });
+
+test("next prepared demo starts immediately after recovery, but not during it", async () => {
+  const f = fixture();
+  await canary(f);
+  f.setOutcome("assertion_failure");
+  f.advance();
+  await f.engine.tick();
+  await f.engine.tick();
+  assert.equal(f.run.phase, "verifying_rollback");
+  await assert.rejects(
+    f.engine.start(CANDIDATE, undefined, undefined, {
+      preset: "promotion-demo",
+      expectedStable: STABLE
+    }),
+    /active/
+  );
+  await finishRollback(f);
+  const finishedAt = f.now();
+  await f.engine.start(CANDIDATE, undefined, undefined, {
+    preset: "promotion-demo",
+    expectedStable: STABLE
+  });
+  assert.equal(f.run.createdAt, finishedAt);
+  assert.equal(f.run.phase, "validating");
+});

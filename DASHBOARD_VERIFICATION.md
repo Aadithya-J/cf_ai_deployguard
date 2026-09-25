@@ -107,3 +107,9 @@ Application version: `ccbe64ee-eb25-4764-9beb-d46ba1730a41`. Both presets now in
 - Final UI copy uses **Health evidence before restoration** for retained evidence, covering both canary failure and verified-promotion reset without mislabeling promotion probes as canary probes.
 
 Final application version after the evidence-label clarification: `774168b7-6c50-4059-a946-a0233ed6ef6c`. Formatting, lint and TypeScript passed again before deployment; no deployment-controller behavior changed after the two live checks.
+
+## No delay after completion
+
+Removed the five-minute cooldown at the user's request. Both presets now become available as soon as the prior run is terminal; active runs and `needs_attention` still retain the target lock. The controller no longer checks saved cooldown timestamps and returns `availableAt: 0` for compatibility with older clients, including previously stored metadata. The UI no longer applies a timestamp gate or shows a cooldown countdown.
+
+`npm run check` passed and all 54 tests passed. The added regression verifies that starting during recovery is rejected, while the next prepared demo is accepted at the exact same clock time as successful recovery completion. This supersedes cooldown behavior documented in the earlier live reports above.

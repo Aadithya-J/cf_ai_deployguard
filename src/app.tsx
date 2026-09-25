@@ -1026,13 +1026,7 @@ function Dashboard({
             <button
               key={kind}
               className="demo-option"
-              disabled={
-                !fresh ||
-                locked ||
-                pending ||
-                !rehearsal ||
-                now < rehearsal.availableAt
-              }
+              disabled={!fresh || locked || pending || !rehearsal}
               onClick={() =>
                 setRehearsalConfirm(rehearsalConfirm === kind ? false : kind)
               }
@@ -1049,11 +1043,9 @@ function Dashboard({
         <p className="demo-access-note">
           {locked
             ? "A demo is running. Follow it in Current run below."
-            : rehearsal && now < rehearsal.availableAt
-              ? `Next demo available in ${Math.ceil((rehearsal.availableAt - now) / 1000)}s. Explore completed runs in History while you wait.`
-              : !fresh
-                ? "Waiting for the latest deployment state…"
-                : "No setup or admin token needed. Open History to explore completed runs."}
+            : !fresh
+              ? "Waiting for the latest deployment state…"
+              : "No setup or admin token needed. Open History to explore completed runs."}
         </p>
         {rehearsalConfirm && (
           <div className="confirmation">
@@ -1068,19 +1060,13 @@ function Dashboard({
                 : "DeployGuard analyzes the prepared PR and tests a faulty update with 10% of traffic. It detects the errors and restores the working version automatically. You do not need to approve anything."}
             </p>
             <p className="field-help">
-              This is a real deployment, not a simulation. One run at a time;
-              five minutes between demo starts.
+              This is a real deployment, not a simulation. One run at a time.
+              Start the next demo as soon as recovery is verified.
             </p>
             <div className="action-buttons">
               <button
                 className="button primary"
-                disabled={
-                  !fresh ||
-                  locked ||
-                  pending ||
-                  !rehearsal ||
-                  now < rehearsal.availableAt
-                }
+                disabled={!fresh || locked || pending || !rehearsal}
                 onClick={async () => {
                   setPending(true);
                   setNotice("");

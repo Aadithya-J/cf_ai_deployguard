@@ -4,8 +4,7 @@ export const REHEARSAL = Object.freeze({
   candidate: "366a3cce-118d-41f6-bef6-63d6f836703b",
   stable: "eb3a0ea3-b238-40c0-833e-62dc61c7f35e",
   prUrl: "https://github.com/Aadithya-J/deployguard/pull/3",
-  expectedCommitSha: "c1abd8a4e4500826f82346283952f9f8fe6cc792",
-  cooldownMs: 300_000
+  expectedCommitSha: "c1abd8a4e4500826f82346283952f9f8fe6cc792"
 });
 export interface RehearsalState {
   id: string;
