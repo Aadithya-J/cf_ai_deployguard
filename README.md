@@ -23,9 +23,21 @@ GITHUB_TOKEN=<repository-read-token>
 
 The Cloudflare token needs Workers Scripts Write for the configured account. `GITHUB_TOKEN` is needed for private PRs. If your supplied token is named `CLOUDFLARE_API_TOKEN`, install its value as `DEPLOYGUARD_API_TOKEN` for the application's binding; Wrangler's credential name is separate.
 
-Sign in using `DEPLOYGUARD_ADMIN_TOKEN`. The server issues an eight-hour signed, HttpOnly, SameSite=Strict cookie (Secure on HTTPS); neither the admin token nor service credentials are saved in browser storage. This is shared single-operator authentication, not a user/role system. Existing bearer-token API clients remain supported. Rotate the admin secret to invalidate signed sessions. Sign-out clears the browser cookie and closes the mounted chat connection; it does not revoke a copied cookie independently of expiry or secret rotation.
+The app opens in public reviewer mode. Use **Admin sign in** with `DEPLOYGUARD_ADMIN_TOKEN` for custom deployments and manual controls. The server issues an eight-hour signed, HttpOnly, SameSite=Strict cookie (Secure on HTTPS); neither the admin token nor service credentials are saved in browser storage. This is shared single-operator authentication, not a user/role system. Existing bearer-token API clients remain supported. Rotate the admin secret to invalidate signed sessions. Sign-out clears the browser cookie and closes the mounted chat connection; it does not revoke a copied cookie independently of expiry or secret rotation.
 
-## Dashboard flow
+## Reviewer demo
+
+No new PR, token or version upload is needed. The deployed dashboard provides three prepared choices:
+
+- **Review a successful deployment:** PR #1, immutable commit, AI advice, canary evidence and promotion.
+- **Review a failed canary:** health assertion failure, rollback and attributed stable recovery traffic.
+- **Run rollback rehearsal:** a real, fixed 90/10 deployment of the existing disposable fault fixture, followed by deterministic rollback and recovery verification. The run persists in history and continues if the browser closes.
+
+The rehearsal accepts no custom parameters. Its candidate and expected stable UUIDs are pinned in `src/deployment/rehearsal.ts`; a changed stable rejects validation before traffic changes. The existing Durable Object lock prevents overlap; a persisted five-minute cooldown limits repeat starts. Public reviewers cannot approve, manually roll back, reconcile, create analyses or start arbitrary deployments. If recovery needs attention, an admin must investigate.
+
+Public read responses omit approval capabilities, pending mutation intents and internal errors. Reviewer chat uses a separate signed, HttpOnly cookie and an isolated conversation, with a 20-question budget per conversation. It only reads public deployment fields. This budget is not global abuse protection: new sessions can be created. Rehearsals are shared real target activity, not private simulations; other visitors can watch the active run. Private GitHub links may be inaccessible to reviewers, but stored PR analysis remains visible.
+
+## Admin dashboard flow
 
 1. Upload a candidate version independently using the [demo Worker instructions](demo-worker/README.md).
 2. Select **New deployment** and supply its UUID, optionally a GitHub PR URL and expected head SHA.
@@ -35,7 +47,7 @@ Sign in using `DEPLOYGUARD_ADMIN_TOKEN`. The server issues an eight-hour signed,
 
 The dashboard polls existing read endpoints every five seconds. Stale or failed refreshes disable controls. Historical records show their own recorded allocation, not a claim about current routing. Health tables show HTTP errors, p95 latency, critical assertions and unknown attribution per endpoint/version. The AI's suggested checks are advice, not executed test results.
 
-Chat uses Workers AI Llama 3.3 and the existing persistent ChatAgent, with only `listDeployments` and `getDeployment` read tools. The starter's unrelated weather, calculation, scheduling, image and external MCP controls were removed. Chat cannot approve, promote, roll back or run checks. It uses a separate `deployguard-inspector` conversation so old starter messages do not supply product context. Answers can be inaccurate; use the dashboard evidence to verify them.
+Chat uses Workers AI Llama 3.3 and the existing persistent ChatAgent, with only `listDeployments` and `getDeployment` read tools. The starter's unrelated weather, calculation, scheduling, image and external MCP controls were removed. Chat cannot approve, promote, roll back or run checks. Admin chat uses a separate `deployguard-inspector` conversation so old starter messages do not supply product context. Answers can be inaccurate; use the dashboard evidence to verify them.
 
 ## Checks and deployment
 
