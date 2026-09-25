@@ -19,7 +19,9 @@
       "/agents/*",
       "/oauth/*",
       "/api/deployment",
-      "/api/deployment/*"
+      "/api/deployment/*",
+      "/api/analysis",
+      "/api/analysis/*"
     ]
   },
   "durable_objects": {

@@ -243,6 +243,8 @@ The separate [demo Worker](demo-worker/README.md) provides version-attributed he
 
 The [V1 deployment lifecycle](DEPLOYMENT_LIFECYCLE.md) documents the deterministic safety policy, approval API, recovery behavior and tests. Run `npm test` for the focused lifecycle tests. Deployment control requires separate API and admin secrets and operates only on the disposable target.
 
+The [PR analysis API](PR_ANALYSIS.md) associates an uploaded candidate with an immutable GitHub PR commit and returns structured Workers AI advice. Advice cannot trigger deployments or change safety policy.
+
 ## Learn more
 
 - [Agents SDK documentation](https://developers.cloudflare.com/agents/)

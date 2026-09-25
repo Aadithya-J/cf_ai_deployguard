@@ -1,6 +1,6 @@
 # DeployGuard V1 deployment lifecycle
 
-This is a deterministic controller for the single disposable `deployguard-demo-target` in the configured account. It adds no GitHub integration or AI decisions. The existing starter chat is independent and cannot invoke deployment operations.
+This is a deterministic controller for the single disposable `deployguard-demo-target` in the configured account. Its safety decisions are independent of the separate [GitHub PR advisory analysis](PR_ANALYSIS.md). The existing starter chat is independent and cannot invoke deployment operations.
 
 ## State machine
 
@@ -62,7 +62,7 @@ Only `rejected`, `promoted`, and `rolled_back` release the run lock. `needs_atte
 
 These are deliberately strict demo thresholds, not statistically calibrated production SLOs. Probe latency includes networking and is not CPU time. A successful runtime invocation does not establish HTTP success, so the policy uses HTTP status and content directly. The greeting check requires a string ending in `, DeployGuard!`; it permits the intended Hello → Hi candidate change.
 
-Unknown observations remain in the rolling window until they age out. Critical assertion failures trigger rollback before minimum sample counts. HTTP failures are evaluated after the observation/sample requirements. Isolated HTTP errors do not trigger immediate rollback; unknown attribution still prevents promotion. A bad stable baseline does not justify promoting the candidate. Policy version 2 is used for new runs.
+Unknown observations remain in the rolling window until they age out. Critical assertion failures trigger rollback before minimum sample counts. HTTP failures are evaluated after the observation/sample requirements. Isolated HTTP errors do not trigger immediate rollback; unknown attribution still prevents promotion. A bad stable baseline does not justify promoting the candidate. Policy version 2 is used for new runs. Nonterminal runs from an older policy are held in `needs_attention`; explicit rollback/reconciliation remains available before starting a fresh run.
 
 ## Implementation
 
@@ -91,7 +91,7 @@ Every endpoint requires `Authorization: Bearer <DEPLOYGUARD_ADMIN_TOKEN>`:
 | -------------------------------- | --------------------------------------------------------------------------------------- |
 | `GET /api/deployment`            | Current run, evidence, approval ID, transition history and confirmed deployment         |
 | `GET /api/deployment/history`    | Up to 100 persisted runs (key-limited, then sorted by creation time; no pagination yet) |
-| `POST /api/deployment/start`     | `{ "candidate": "<version-uuid>" }`                                                     |
+| `POST /api/deployment/start`     | `{ "candidate": "<version-uuid>", "analysisId": "<optional-analysis-uuid>" }`           |
 | `POST /api/deployment/approve`   | `{ "runId": "<run-uuid>", "approvalId": "<approval-uuid>" }`                            |
 | `POST /api/deployment/rollback`  | `{ "runId": "<run-uuid>" }`                                                             |
 | `POST /api/deployment/reconcile` | `{ "runId": "<run-uuid>" }`                                                             |

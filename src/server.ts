@@ -220,7 +220,11 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
 
 export default {
   async fetch(request: Request, env: DeploymentEnv) {
-    if (new URL(request.url).pathname.startsWith("/api/deployment")) {
+    if (
+      ["/api/deployment", "/api/analysis"].some((prefix) =>
+        new URL(request.url).pathname.startsWith(prefix)
+      )
+    ) {
       return env.DeploymentController.getByName("demo-target").fetch(request);
     }
     return (
