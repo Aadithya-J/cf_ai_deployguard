@@ -56,7 +56,7 @@ A deployment start can include `prUrl` and an optional `expectedCommitSha` to cr
 ## Configuration and limits
 
 - Reuses the existing `AI` binding and `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. No new dependencies, bindings or data services.
-- `DEPLOYGUARD_API_TOKEN` validates the version; `DEPLOYGUARD_ADMIN_TOKEN` protects the API. No tokens are exposed to the frontend or model.
+- `DEPLOYGUARD_API_TOKEN` validates the version; `DEPLOYGUARD_ADMIN_TOKEN` protects the API. Cloudflare and GitHub service tokens are never exposed to the frontend or model. The dashboard exchanges the operator-supplied admin token for a protected session cookie.
 - Optional `GITHUB_TOKEN` allows private repositories and authenticated API limits. Use a token restricted to the intended repository with read permissions for pull requests and contents. Without it, only publicly accessible PRs can be analyzed.
 - GitHub requests go only to `api.github.com`, use GET, reject redirects and have 15-second timeouts. No comments, statuses, reviews, merges or other GitHub writes are implemented.
 - V1 accepts 1–100 changed files and at most 24,000 UTF-8 bytes of diff. Oversized, empty, binary, or file-count-mismatched diffs are rejected rather than silently truncated. Submodule contents, unchanged code and repository context are not fetched.
@@ -70,7 +70,7 @@ A deployment start can include `prUrl` and an optional `expectedCommitSha` to cr
 2. The PR may advance after analysis. Historical records deliberately remain bound to the captured SHA; they do not claim to describe the current PR head. A new head requires a newly associated uploaded version.
 3. The merge-base/head snapshot and hash enable traceability, but do not prove build provenance. Decide how the uploader will attest version-to-commit mapping before using real applications.
 4. Unsupported/large/binary diffs and GitHub rate-limit/access failures are explicit errors. No partial analysis, background ingestion, chunked summaries or automatic retries were added.
-5. There is no dashboard, GitHub OAuth/App installation flow, per-user identity or durable analysis job queue yet. The shared admin token and optional repository token fit the current single-developer demo.
+5. The dashboard is available; GitHub OAuth/App installation, per-user identity and a durable analysis job queue remain deferred. The shared admin token and optional repository token fit the current single-developer demo.
 6. [PR #1 live verification](demo-worker/PR1_VERIFICATION.md) now covers authenticated GitHub retrieval, an uploaded candidate, 20 live endpoint checks, and real Workers AI analysis. That initial check used local file persistence and left production traffic unchanged. [Live backend verification](BACKEND_VERIFICATION.md) subsequently exercises the deployed HTTP/Durable Object path and real deployment lifecycle.
 
 ## Verification and official references

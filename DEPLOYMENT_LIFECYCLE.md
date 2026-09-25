@@ -1,6 +1,6 @@
 # DeployGuard V1 deployment lifecycle
 
-This is a deterministic controller for the single disposable `deployguard-demo-target` in the configured account. Its safety decisions are independent of the separate [GitHub PR advisory analysis](PR_ANALYSIS.md). The existing starter chat is independent and cannot invoke deployment operations.
+This is a deterministic controller for the single disposable `deployguard-demo-target` in the configured account. Its safety decisions are independent of the separate [GitHub PR advisory analysis](PR_ANALYSIS.md). The secondary deployment chat has read-only history/detail tools and cannot invoke deployment operations.
 
 ## State machine
 
@@ -100,7 +100,7 @@ The controller is disabled with HTTP 503 until both secrets exist:
 
 For local use, add them to ignored `.dev.vars`; use Wrangler secrets for a deployed controller. Neither credential is bundled into the frontend. The deployed verification uses dedicated user-provided Cloudflare/GitHub tokens and a separate generated admin secret. See [live backend verification](BACKEND_VERIFICATION.md).
 
-Every endpoint requires `Authorization: Bearer <DEPLOYGUARD_ADMIN_TOKEN>`:
+API clients use `Authorization: Bearer <DEPLOYGUARD_ADMIN_TOKEN>`. The dashboard uses a signed HttpOnly session cookie, authenticated at the Worker boundary and translated to the same controller authorization. Cookie writes and chat handshakes require the same origin.
 
 | Method / path                    | JSON body or result                                                                     |
 | -------------------------------- | --------------------------------------------------------------------------------------- |
