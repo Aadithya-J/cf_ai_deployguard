@@ -167,3 +167,70 @@ test("valid public rehearsal forwards only the fixed internal command", async ()
   assert.equal(await f.calls[0].text(), "{}");
   assert.equal(f.calls[0].headers.get("authorization"), `Bearer ${secret}`);
 });
+
+test("public demo approval only forwards bounded IDs to the dedicated command", async () => {
+  const f = fixture();
+  const a = await f.guest();
+  const body = {
+    runId: "11111111-1111-4111-8111-111111111111",
+    approvalId: "22222222-2222-4222-8222-222222222222"
+  };
+  assert.equal(
+    (await f.request("/api/demo/approve", "POST", "", body)).status,
+    401
+  );
+  assert.equal(
+    (
+      await f.request("/api/demo/approve", "POST", a.cookie, {
+        ...body,
+        candidate: "other"
+      })
+    ).status,
+    400
+  );
+  assert.equal(
+    (
+      await f.request("/api/demo/healthy", "POST", a.cookie, {
+        candidate: "other"
+      })
+    ).status,
+    400
+  );
+  assert.equal(
+    (await f.request("/api/demo/approve", "POST", a.cookie, body)).status,
+    202
+  );
+  assert.equal(
+    new URL(f.calls[0].url).pathname,
+    "/api/deployment/approve-demo"
+  );
+  assert.deepEqual(JSON.parse(await f.calls[0].text()), body);
+});
+
+test("only healthy demo read responses expose the limited demo approval", () => {
+  const base = {
+    id: "run",
+    phase: "awaiting_approval",
+    samples: [],
+    events: [],
+    approval: { id: "limited-demo-approval", expiresAt: 123 }
+  } as unknown as Run;
+  assert.equal(publicRun(base).rehearsal, undefined);
+  const failed = {
+    ...base,
+    rehearsal: { preset: "rollback-demo" as const, expectedStable: "stable" }
+  };
+  assert.equal(publicRun(failed).rehearsal?.approvalId, undefined);
+  const healthy = {
+    ...base,
+    rehearsal: { preset: "promotion-demo" as const, expectedStable: "stable" }
+  };
+  assert.equal(
+    publicRun(healthy).rehearsal?.approvalId,
+    "limited-demo-approval"
+  );
+  assert.equal(
+    publicRun({ ...healthy, phase: "promoting" }).rehearsal?.approvalId,
+    undefined
+  );
+});

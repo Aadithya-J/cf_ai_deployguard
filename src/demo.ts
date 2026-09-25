@@ -43,7 +43,13 @@ export function publicRun(r: Run) {
     rehearsal: r.rehearsal
       ? {
           preset: r.rehearsal.preset,
-          expectedStable: r.rehearsal.expectedStable
+          expectedStable: r.rehearsal.expectedStable,
+          promotionVerifiedAt: r.rehearsal.promotionVerifiedAt,
+          approvalId:
+            r.rehearsal.preset === "promotion-demo" &&
+            r.phase === "awaiting_approval"
+              ? r.approval?.id
+              : undefined
         }
       : undefined,
     expected: r.expected

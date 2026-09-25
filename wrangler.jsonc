@@ -20,6 +20,8 @@
       "/api/session",
       "/api/reviewer-session",
       "/api/demo/rehearsal",
+      "/api/demo/healthy",
+      "/api/demo/approve",
       "/api/deployment",
       "/api/deployment/*",
       "/api/analysis",

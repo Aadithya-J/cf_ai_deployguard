@@ -27,7 +27,15 @@ export async function dashboardRequest(
       { error: "Admin authentication is required for this action." },
       { status: 401, headers: { "cache-control": "no-store" } }
     );
-  if (path === "/api/demo/rehearsal") {
+  if (
+    ["/api/demo/rehearsal", "/api/demo/healthy", "/api/demo/approve"].includes(
+      path
+    )
+  ) {
+    const approval = path === "/api/demo/approve";
+    let forwardedBody = "{}";
+    if (request.method === "GET" && path !== "/api/demo/rehearsal")
+      return denied();
     if (request.method !== "GET") {
       if (
         request.method !== "POST" ||
@@ -46,16 +54,22 @@ export async function dashboardRequest(
         );
       }
       if (
-        text.length > 100 ||
+        text.length > 256 ||
         !body ||
         typeof body !== "object" ||
         Array.isArray(body) ||
-        Object.keys(body).length
+        (approval
+          ? Object.keys(body).sort().join(",") !== "approvalId,runId" ||
+            !Object.values(body).every(
+              (v) => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v)
+            )
+          : Object.keys(body).length)
       )
         return Response.json(
           { error: "This rehearsal accepts no custom parameters." },
           { status: 400 }
         );
+      forwardedBody = JSON.stringify(body);
     }
     if (!ports.secret)
       return Response.json(
@@ -63,11 +77,18 @@ export async function dashboardRequest(
         { status: 503 }
       );
     const forwarded = new Request(
-      new URL("/api/deployment/rehearsal", request.url),
+      new URL(
+        approval
+          ? "/api/deployment/approve-demo"
+          : path === "/api/demo/healthy"
+            ? "/api/deployment/healthy-rehearsal"
+            : "/api/deployment/rehearsal",
+        request.url
+      ),
       {
         method: request.method,
         headers: { Authorization: `Bearer ${ports.secret}` },
-        ...(request.method === "POST" ? { body: "{}" } : {})
+        ...(request.method === "POST" ? { body: forwardedBody } : {})
       }
     );
     const response = await ports.controller(forwarded);

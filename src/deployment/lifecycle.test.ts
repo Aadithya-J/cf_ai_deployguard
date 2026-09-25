@@ -591,3 +591,89 @@ test("prepared rehearsal refuses changed stable and preserves the normal run loc
   await f.engine.tick();
   assert.equal(f.run.phase, "smoke");
 });
+
+async function preparedHealthy() {
+  const f = fixture();
+  f.ports.analyze = async (r) => ({
+    analysisId: crypto.randomUUID(),
+    prUrl: r.request!.prUrl,
+    commitSha: r.request!.expectedCommitSha!
+  });
+  await f.engine.start(
+    CANDIDATE,
+    undefined,
+    {
+      prUrl: "https://github.com/demo/repo/pull/2",
+      expectedCommitSha: "b".repeat(40)
+    },
+    { preset: "promotion-demo", expectedStable: STABLE }
+  );
+  assert.equal(f.run.phase, "analyzing");
+  await f.engine.tick();
+  assert.equal(f.run.source?.commitSha, "b".repeat(40));
+  await f.engine.tick();
+  await f.engine.tick();
+  await f.engine.tick();
+  for (let i = 0; i < POLICY.minPerEndpoint; i++) {
+    f.advance();
+    await f.engine.tick();
+  }
+  assert.equal(f.run.phase, "awaiting_approval");
+  return f;
+}
+test("healthy demo approval really promotes then restores across restart before unlocking", async () => {
+  const f = await preparedHealthy();
+  const r = f.run;
+  await assert.rejects(f.engine.approveDemo(r.id, "wrong"));
+  await f.engine.approveDemo(r.id, r.approval!.id);
+  await assert.rejects(f.engine.approveDemo(r.id, r.approval!.id));
+  const restarted = new Lifecycle(f.ports);
+  await restarted.tick();
+  assert.deepEqual(f.writes[1], [{ version_id: CANDIDATE, percentage: 100 }]);
+  for (let i = 0; i < POLICY.postPromotionSamples; i++) {
+    f.advance();
+    await restarted.tick();
+  }
+  assert.equal(f.run.phase, "rolling_back");
+  assert.ok(f.run.rehearsal?.promotionVerifiedAt);
+  await assert.rejects(restarted.start(CANDIDATE), /active/);
+  await restarted.tick();
+  assert.equal(f.run.phase, "verifying_rollback");
+  for (let i = 0; i < ROLLBACK_POLICY.minPerEndpoint; i++) {
+    f.advance();
+    await new Lifecycle(f.ports).tick();
+  }
+  assert.equal(f.run.phase, "demo_complete");
+  assert.deepEqual(f.writes[2], [{ version_id: STABLE, percentage: 100 }]);
+  await restarted.start(CANDIDATE);
+});
+test("demo reset failures retain lock; normal runs cannot receive public approval", async () => {
+  const ordinary = fixture();
+  await healthy(ordinary);
+  await assert.rejects(
+    ordinary.engine.approveDemo(ordinary.run.id, ordinary.run.approval!.id),
+    /prepared/
+  );
+  const f = await preparedHealthy();
+  await f.engine.approveDemo(f.run.id, f.run.approval!.id);
+  await f.engine.tick();
+  for (let i = 0; i < POLICY.postPromotionSamples; i++) {
+    f.advance();
+    await f.engine.tick();
+  }
+  await f.engine.tick();
+  f.setOutcome("unknown");
+  f.advance(ROLLBACK_POLICY.deadlineMs);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "needs_attention");
+  await assert.rejects(f.engine.start(CANDIDATE), /active/);
+});
+test("abandoned demo approval restores stable without reporting successful promotion", async () => {
+  const f = await preparedHealthy();
+  f.advance(POLICY.approvalMs);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rolling_back");
+  await f.engine.tick();
+  await finishRollback(f);
+  assert.equal(f.run.rehearsal?.promotionVerifiedAt, undefined);
+});

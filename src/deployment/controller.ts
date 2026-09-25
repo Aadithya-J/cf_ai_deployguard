@@ -1,4 +1,8 @@
-import { REHEARSAL, type RehearsalState } from "./rehearsal.ts";
+import {
+  REHEARSAL,
+  HEALTHY_REHEARSAL,
+  type RehearsalState
+} from "./rehearsal.ts";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 import { GitHubReader, boundedText, parsePullUrl } from "../analysis/github.ts";
@@ -41,9 +45,9 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
       ...(run.rehearsal
         ? {
             rehearsal: {
-              id: REHEARSAL.id,
-              candidate: REHEARSAL.candidate,
-              stable: REHEARSAL.stable,
+              id: run.rehearsal.preset,
+              candidate: run.candidate,
+              stable: run.rehearsal.expectedStable,
               availableAt: run.createdAt + REHEARSAL.cooldownMs,
               lastRunId: run.id
             }
@@ -315,7 +319,13 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
           await this.ctx.storage.setAlarm(Date.now() + POLICY.intervalMs);
         }
         let run: Run;
-        if (path === "/api/deployment/rehearsal") {
+        if (
+          path === "/api/deployment/rehearsal" ||
+          path === "/api/deployment/healthy-rehearsal"
+        ) {
+          const preset = path.endsWith("/healthy-rehearsal")
+            ? HEALTHY_REHEARSAL
+            : REHEARSAL;
           z.object({}).strict().parse(body);
           const previous =
             await this.ctx.storage.get<RehearsalState>("rehearsal");
@@ -323,10 +333,27 @@ export class DeploymentController extends DurableObject<DeploymentEnv> {
             throw new Error(
               "Rehearsal cooling down; review its stored run or wait until the displayed time"
             );
-          run = await engine.start(REHEARSAL.candidate, undefined, undefined, {
-            preset: "rollback-demo",
-            expectedStable: REHEARSAL.stable
-          });
+          run = await engine.start(
+            preset.candidate,
+            undefined,
+            {
+              prUrl: preset.prUrl,
+              expectedCommitSha: preset.expectedCommitSha
+            },
+            {
+              preset:
+                preset === HEALTHY_REHEARSAL
+                  ? "promotion-demo"
+                  : "rollback-demo",
+              expectedStable: preset.stable
+            }
+          );
+        } else if (path === "/api/deployment/approve-demo") {
+          const input = z
+            .object({ runId: z.string().uuid(), approvalId: z.string().uuid() })
+            .strict()
+            .parse(body);
+          run = await engine.approveDemo(input.runId, input.approvalId);
         } else if (path === "/api/deployment/start") {
           const input = z
             .object({

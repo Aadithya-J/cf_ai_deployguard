@@ -40,6 +40,7 @@ export type Phase =
   | "promoting"
   | "verifying_rollback"
   | "rolling_back"
+  | "demo_complete"
   | "promoted"
   | "rolled_back"
   | "rejected"
@@ -64,7 +65,12 @@ export interface Run {
   source?: { analysisId: string; commitSha: string; prUrl: string };
   request?: { prUrl: string; expectedCommitSha?: string };
   analysisId?: string;
-  rehearsal?: { preset: "rollback-demo"; expectedStable: string };
+  rehearsal?: {
+    preset: "rollback-demo" | "promotion-demo";
+    expectedStable: string;
+    promotionVerifiedAt?: number;
+    approvalId?: string;
+  };
   candidate: string;
   stable: string;
   phase: Phase;
@@ -99,7 +105,7 @@ export interface Ports {
   uuid(): string;
 }
 export const terminal = (r: Run) =>
-  ["promoted", "rolled_back", "rejected"].includes(r.phase);
+  ["promoted", "rolled_back", "rejected", "demo_complete"].includes(r.phase);
 export const sameAllocation = (a: Allocation, b: Allocation) =>
   a.length === b.length &&
   a.every((x) =>
@@ -372,6 +378,14 @@ export class Lifecycle {
     }
     await this.confirm(r);
   }
+  async approveDemo(runId: string, approvalId: string) {
+    const r = await this.p.load();
+    if (!r || r.id !== runId || r.rehearsal?.preset !== "promotion-demo")
+      throw new Error(
+        "Only a prepared healthy rehearsal can receive public approval"
+      );
+    return this.approve(runId, approvalId);
+  }
   async approve(runId: string, approvalId: string) {
     const r = await this.p.load();
     if (
@@ -530,8 +544,10 @@ export class Lifecycle {
         else if (rollbackHealthy(r, this.p.now()))
           await this.move(
             r,
-            "rolled_back",
-            "Stable allocation and healthy ordinary traffic verified"
+            r.rehearsal?.promotionVerifiedAt ? "demo_complete" : "rolled_back",
+            r.rehearsal?.promotionVerifiedAt
+              ? "Temporary promotion verified; original stable restored and healthy ordinary traffic verified"
+              : "Stable allocation and healthy ordinary traffic verified"
           );
         else {
           r.updatedAt = this.p.now();
@@ -552,9 +568,17 @@ export class Lifecycle {
             "rolling_back",
             "Post-promotion verification deadline expired"
           );
-        else if (decision === "healthy")
-          await this.move(r, "promoted", "Post-promotion health verified");
-        else await this.p.save(r);
+        else if (decision === "healthy") {
+          if (r.rehearsal?.preset === "promotion-demo") {
+            r.rehearsal.promotionVerifiedAt = this.p.now();
+            await this.move(
+              r,
+              "rolling_back",
+              "Temporary promotion health verified; automatically restoring original stable for the next reviewer"
+            );
+          } else
+            await this.move(r, "promoted", "Post-promotion health verified");
+        } else await this.p.save(r);
       } else {
         if (!(await this.checkCurrent(r))) return r;
         if (
