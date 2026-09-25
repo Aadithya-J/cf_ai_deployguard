@@ -380,3 +380,16 @@ test("post-promotion failure rolls back; missing evidence times out; lock remain
     assert.equal(f.run.phase, "rolled_back");
   }
 });
+
+test("old policy runs retain lock and permit only explicit stable restoration", async () => {
+  const f = fixture();
+  await canary(f);
+  const old = f.run;
+  Object.assign(old.policy, { version: 1 });
+  await f.ports.save(old);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "needs_attention");
+  await f.engine.rollback(old.id);
+  await f.engine.tick();
+  assert.equal(f.run.phase, "rolled_back");
+});

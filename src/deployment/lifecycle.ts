@@ -338,6 +338,14 @@ export class Lifecycle {
   async tick() {
     const r = await this.p.load();
     if (!r || terminal(r) || r.phase === "needs_attention") return r;
+    if (r.policy.version !== POLICY.version && r.phase !== "rolling_back") {
+      await this.move(
+        r,
+        "needs_attention",
+        "Policy version changed; reconcile or restore stable before starting a new run"
+      );
+      return r;
+    }
     try {
       if (["starting_canary", "promoting", "rolling_back"].includes(r.phase)) {
         // A delayed alarm must not promote on old evidence.
