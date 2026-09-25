@@ -12,6 +12,8 @@ One stateless Worker in the configured Cloudflare account. No D1, R2, Durable Ob
 | Unknown path                         | 404                                                  |
 | Method other than GET                | 405                                                  |
 
+The optional `name` defaults to `DeployGuard` when omitted. Supplied names are trimmed, must be non-blank and at most 80 UTF-16 code units, and cannot contain control characters. Duplicate `name` parameters return 400. Unicode names, spaces, and punctuation are supported.
+
 Every Worker-generated response carries `x-deployguard-version` (Cloudflare version UUID), `x-deployguard-release`, and `x-request-id`. JSON includes matching `version` and `requestId` fields. Responses use `Cache-Control: no-store`. Platform failures that occur before the handler runs cannot carry these application headers.
 
 One structured console event records version, normalized route, HTTP status and request ID. An optional `x-deployguard-probe` identifier correlates a probe batch. Invocation logs are also enabled. These are diagnostic events; no monitoring service or deployment controller is implemented.
@@ -21,6 +23,7 @@ One structured console event records version, normalized route, HTTP status and 
 Run from the repository root:
 
 ```sh
+node --test demo-worker/*.test.mjs
 npm run demo:check
 npx wrangler dev --config demo-worker/wrangler.jsonc
 ```
