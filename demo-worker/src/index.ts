@@ -16,6 +16,14 @@ export default {
       if (name.length > 80) {
         status = 400;
         result = { error: "Name must be at most 80 characters" };
+      } else if (
+        // Intentional disposable demo fault: previews stay healthy so the
+        // canary exercises HTTP error-rate policy rather than smoke rejection.
+        url.hostname === "deployguard-demo-target.jlaadithya.workers.dev" &&
+        Math.random() < 0.7
+      ) {
+        status = 503;
+        result = { error: "Intentional intermittent greeting failure" };
       } else {
         result = { greeting: `${env.GREETING}, ${name}!` };
       }
