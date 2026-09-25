@@ -790,7 +790,7 @@ function Dashboard({
   const [lastSync, setLastSync] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [newRun, setNewRun] = useState(false);
-  const [chat, setChat] = useState(false);
+  const [chat, setChat] = useState(true);
   const [pending, setPending] = useState(false);
   const [query, setQuery] = useState("");
   const selection = useRef<string | null>(null);
