@@ -85,7 +85,8 @@ export class GitHubReader {
   private http: typeof fetch;
   constructor(token?: string, http: typeof fetch = fetch) {
     this.token = token;
-    this.http = http;
+    // Native Workers fetch requires its global receiver when stored as a method.
+    this.http = http.bind(globalThis);
   }
   private async get(path: string, diff = false) {
     const response = await this.http(`https://api.github.com${path}`, {
@@ -97,7 +98,7 @@ export class GitHubReader {
         "User-Agent": "DeployGuard",
         ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
       },
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(15_000)
     });
     if (!response.ok)

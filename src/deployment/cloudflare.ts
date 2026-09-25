@@ -43,7 +43,8 @@ export class CloudflareTarget {
   private http: typeof fetch;
   constructor(token: string, http: typeof fetch = fetch) {
     this.token = token;
-    this.http = http;
+    // Native Workers fetch requires its global receiver when stored as a method.
+    this.http = http.bind(globalThis);
   }
   private async api(path: string, body?: unknown): Promise<unknown> {
     const response = await this.http(
@@ -56,7 +57,7 @@ export class CloudflareTarget {
         },
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(10_000),
-        redirect: "error"
+        redirect: "manual"
       }
     );
     if (!response.ok) throw new Error(`Cloudflare API HTTP ${response.status}`);
@@ -118,7 +119,7 @@ export class CloudflareTarget {
                     })
               },
               signal: AbortSignal.timeout(5_000),
-              redirect: "error"
+              redirect: "manual"
             });
             // A platform error with no identifying header cannot be attributed reliably.
             if (response.headers.get("x-deployguard-version") !== version) {

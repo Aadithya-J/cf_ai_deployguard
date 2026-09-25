@@ -107,7 +107,7 @@ test("snapshot pins merge-base and head SHA, hashes diff and revalidates PR", as
   assert.equal(f.requests.filter((r) => r.url.includes("/pulls/")).length, 2);
   assert.ok(
     f.requests.every(
-      (r) => r.init?.method === undefined && r.init?.redirect === "error"
+      (r) => r.init?.method === undefined && r.init?.redirect === "manual"
     )
   );
 });
@@ -241,4 +241,23 @@ test("interrupted analysis is shown as failed and never as completed advice", as
       .status,
     "complete"
   );
+});
+
+test("GitHub reader binds the native fetch receiver in Workers", async () => {
+  let checked = false;
+  const nativeLikeFetch = function (
+    this: unknown,
+    _url: unknown,
+    init?: RequestInit
+  ) {
+    assert.equal(this, globalThis);
+    assert.equal(init?.redirect, "manual");
+    checked = true;
+    return Promise.resolve(new Response("denied", { status: 403 }));
+  } as typeof fetch;
+  await assert.rejects(
+    new GitHubReader("test", nativeLikeFetch).snapshot(pr.html_url),
+    /403/
+  );
+  assert.equal(checked, true);
 });

@@ -172,3 +172,20 @@ test("HTTP 200 critical contract failure remains hard and post-promotion uses or
   assert.ok(samples.every((s) => s.outcome === "assertion_failure"));
   assert.ok(seen.every((h) => !h.has("Cloudflare-Workers-Version-Overrides")));
 });
+
+test("stored fetch preserves the global receiver required by Workers", async () => {
+  const nativeLikeFetch = function (
+    this: unknown,
+    _url: unknown,
+    init?: RequestInit
+  ) {
+    assert.equal(this, globalThis);
+    assert.equal(init?.redirect, "manual");
+    return Promise.resolve(
+      Response.json({ success: true, result: { id: candidate } })
+    );
+  } as typeof fetch;
+  await new CloudflareTarget("test", nativeLikeFetch).validateVersion(
+    candidate
+  );
+});

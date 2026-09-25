@@ -62,6 +62,7 @@ export interface Run {
   createdAt: number;
   updatedAt: number;
   reason: string;
+  failure?: { phase: Phase; message: string; at: number };
   expected?: Deployment;
   canaryAt?: number;
   promotionAt?: number;
@@ -490,7 +491,15 @@ export class Lifecycle {
           }
         }
       }
-    } catch {
+    } catch (error) {
+      r.failure = {
+        phase: r.phase,
+        message:
+          error instanceof Error
+            ? error.message.slice(0, 300)
+            : "Unexpected operation failure",
+        at: this.p.now()
+      };
       if (
         r.phase === "analyzing" ||
         r.phase === "validating" ||
