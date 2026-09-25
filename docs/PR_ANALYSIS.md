@@ -71,7 +71,7 @@ A deployment start can include `prUrl` and an optional `expectedCommitSha` to cr
 3. The merge-base/head snapshot and hash enable traceability, but do not prove build provenance. Decide how the uploader will attest version-to-commit mapping before using real applications.
 4. Unsupported/large/binary diffs and GitHub rate-limit/access failures are explicit errors. No partial analysis, background ingestion, chunked summaries or automatic retries were added.
 5. The dashboard is available; GitHub OAuth/App installation, per-user identity and a durable analysis job queue remain deferred. The shared admin token and optional repository token fit the current single-developer demo.
-6. [PR #1 live verification](demo-worker/PR1_VERIFICATION.md) now covers authenticated GitHub retrieval, an uploaded candidate, 20 live endpoint checks, and real Workers AI analysis. That initial check used local file persistence and left production traffic unchanged. [Live backend verification](BACKEND_VERIFICATION.md) subsequently exercises the deployed HTTP/Durable Object path and real deployment lifecycle.
+6. [PR #1 live verification](verification/PR1_VERIFICATION.md) now covers authenticated GitHub retrieval, an uploaded candidate, 20 live endpoint checks, and real Workers AI analysis. That initial check used local file persistence and left production traffic unchanged. [Live backend verification](verification/BACKEND_VERIFICATION.md) subsequently exercises the deployed HTTP/Durable Object path and real deployment lifecycle.
 
 ## Verification and official references
 

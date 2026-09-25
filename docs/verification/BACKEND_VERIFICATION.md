@@ -48,7 +48,7 @@ After the successful run, the backend was redeployed as version `9f2db4dd-1e32-4
 - Replayed approval after completion: HTTP 409.
 - Historical run endpoint and history list returned the persisted terminal record.
 - Both deployment mutations were confirmed through Cloudflare's API with expected allocation and run annotation.
-- No rollback was induced in this live successful run. A subsequent [live failure rehearsal](demo-worker/ROLLBACK_VERIFICATION.md) verified automatic rollback and identified a routing-propagation gap. Automated tests cover unhealthy/inconclusive outcomes, rollback, rollback failure, stale evidence, ambiguous mutations and external drift.
+- No rollback was induced in this live successful run. A subsequent [live failure rehearsal](ROLLBACK_VERIFICATION.md) verified automatic rollback and identified a routing-propagation gap. Automated tests cover unhealthy/inconclusive outcomes, rollback, rollback failure, stale evidence, ambiguous mutations and external drift.
 
 Frontend read endpoints (admin bearer required):
 

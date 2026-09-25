@@ -77,7 +77,7 @@ A candidate response, missing attribution, HTTP error, assertion failure or inva
 
 Rollback evidence is stored separately in `run.rollbackVerification`, preserving the original failure samples. `observedVersion` records returned header attribution even when it differs from the intended version. The combined API exposes the rollback deadline and counts from rollback evidence while disabling repeated rollback commands during verification. Explicit reconciliation of stable allocation starts a new bounded verification attempt; it never directly marks the run complete. Old-policy recovery uses the new rollback verification policy, while historical terminal records remain unchanged.
 
-These are sampled requests from the coordinator, not proof of zero candidate traffic worldwide. The live rerun is documented in [rollback verification](demo-worker/ROLLBACK_VERIFICATION.md).
+These are sampled requests from the coordinator, not proof of zero candidate traffic worldwide. The live rerun is documented in [rollback verification](verification/ROLLBACK_VERIFICATION.md).
 
 ## Implementation
 
@@ -98,7 +98,7 @@ The controller is disabled with HTTP 503 until both secrets exist:
 - `DEPLOYGUARD_API_TOKEN`: account-scoped Cloudflare API token with Workers Scripts Write permission for the existing account.
 - `DEPLOYGUARD_ADMIN_TOKEN`: separate strong bearer token for the developer operating this demo.
 
-For local use, add them to ignored `.dev.vars`; use Wrangler secrets for a deployed controller. Neither credential is bundled into the frontend. The deployed verification uses dedicated user-provided Cloudflare/GitHub tokens and a separate generated admin secret. See [live backend verification](BACKEND_VERIFICATION.md).
+For local use, add them to ignored `.dev.vars`; use Wrangler secrets for a deployed controller. Neither credential is bundled into the frontend. The deployed verification uses dedicated user-provided Cloudflare/GitHub tokens and a separate generated admin secret. See [live backend verification](verification/BACKEND_VERIFICATION.md).
 
 API clients use `Authorization: Bearer <DEPLOYGUARD_ADMIN_TOKEN>`. The dashboard uses a signed HttpOnly session cookie, authenticated at the Worker boundary and translated to the same controller authorization. Cookie writes and chat handshakes require the same origin.
 
@@ -139,7 +139,7 @@ Run `npm test` on a Node version with native TypeScript support (tested on Node 
 
 Focused automated cases cover healthy approval/promotion; unhealthy rollback; inconclusive deadline rollback; wrong, expired and replayed approvals; invalidation after telemetry loss; delayed promotion; overlapping runs across controller reconstruction; validation/smoke failure; lost mutation response; unconfirmed mutation; failed rollback; external drift; control-plane outage; sample coverage/freshness/latency; HTTP regression thresholds; post-promotion success, failure and timeout; and Cloudflare adapter URL, attribution and API validation.
 
-A separate local Workers runtime check exercises unauthorized access, simultaneous starts, and persistence across a runtime restart with outbound networking disabled. The full Vite Worker/frontend build is also checked. The actual deployed Worker/Durable Object flow is recorded in [live backend verification](BACKEND_VERIFICATION.md). The earlier manual deployment verification is recorded separately in `demo-worker/VERIFICATION.md`.
+A separate local Workers runtime check exercises unauthorized access, simultaneous starts, and persistence across a runtime restart with outbound networking disabled. The full Vite Worker/frontend build is also checked. The actual deployed Worker/Durable Object flow is recorded in [live backend verification](verification/BACKEND_VERIFICATION.md). The earlier manual deployment verification is recorded separately in `docs/verification/TARGET_VERIFICATION.md`.
 
 ## Current official references
 

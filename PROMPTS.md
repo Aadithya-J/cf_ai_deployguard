@@ -138,3 +138,13 @@ rune at a time lock so taht there no two parallele runs
 
 20. i think you ahve gh access so you can probably do it and the nfix the dmeo pr urls everything along with it an the nrun tests also
 and maybe chekc the existin runs also nmayeb fi those owuld break with hardcode dpr ro smth idk
+
+21. you can erase historical recordsi f that makes it easier unels oyu alreay fxied it
+
+22. now iw ant you to redo the readme so that its proper and like mentios teh demo and all in the fotnend hte url everyghig eke the redame cnocise as in the impronta info only a hte ned the more deild ueles one can be after that but li ekyou get my point it hosud be suhc tha threviewir can easiyl see go to url tesit otu and liek eplxnaion and htearchitecure or liek plxani oof hteuapa suamr yadn al lis therin the readme
+
+23. do this after comeotin current tasks
+
+24. adn check if we haveto cleanup any uselss josn or md fiels fomr hte repo which was pushed etc or its fine
+
+25. afte competing current task
