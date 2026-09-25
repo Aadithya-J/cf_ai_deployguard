@@ -1,0 +1,40 @@
+{
+  "id": "71e188d1-dd1c-4777-adcd-0a8ce45f7b85",
+  "candidate": "eb3a0ea3-b238-40c0-833e-62dc61c7f35e",
+  "target": "deployguard-demo-target",
+  "status": "complete",
+  "advisoryOnly": true,
+  "provenance": "operator_association_unverified",
+  "pr": {
+    "repository": "Aadithya-J/deployguard",
+    "number": 1,
+    "url": "https://github.com/Aadithya-J/deployguard/pull/1",
+    "title": "fix(demo): validate personalized greeting names",
+    "commitSha": "6da8ddb71532d280df82f33fc38ba211b38431f4",
+    "baseSha": "c067fb9044344fe8d863dd4e56eb4226966e1c03",
+    "mergeBaseSha": "c067fb9044344fe8d863dd4e56eb4226966e1c03",
+    "changedFiles": 3,
+    "diffSha256": "016058a45f2f51b78046fe55cf26460e52bb38159b11810288a0688c84f9079e",
+    "capturedAt": 1790319159091
+  },
+  "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  "promptVersion": 1,
+  "createdAt": 1790319159093,
+  "analysis": {
+    "summary": "The changes introduce input validation for the greeting endpoint, which may affect its behavior and performance.",
+    "affectedAreas": ["greeting endpoint validation"],
+    "riskLevel": "medium",
+    "likelyFailureModes": [
+      "The greeting endpoint may return an incorrect greeting or error message if the input validation fails to handle edge cases, such as non-UTF-16 characters or extremely long names, which could lead to user confusion or errors."
+    ],
+    "suggestedChecks": [
+      "invalid_input_contract",
+      "greeting_contract",
+      "version_attribution",
+      "error_rate_comparison",
+      "latency_comparison",
+      "health_contract"
+    ]
+  },
+  "completedAt": 1790319165255
+}
